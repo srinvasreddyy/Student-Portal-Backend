@@ -1,7 +1,7 @@
 const User = require('../models/User');
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
-const { sendEmail } = require('../services/mailer');
+const mailer = require('../services/mailer');
 const config = require('../config');
 const TokenUtils = require('../utils/tokenUtils');
 const BruteForceProtector = require('../middleware/bruteForceProtector');
@@ -46,7 +46,7 @@ exports.register = async (req, res, next) => {
 
         // Send generic email verify
         try {
-            await sendEmail(
+            await mailer.sendEmail(
                 newUser.email,
                 'Verify your Email',
                 `<p>Your code is: <strong>${verifyCode}</strong></p>`
@@ -110,7 +110,7 @@ exports.refreshToken = async (req, res, next) => {
             res.status(200).json({ success: true, tokens: newTokens });
         } catch (error) {
             // Usually returns Token Compromised, Invalid, or Expired
-            return res.status(401).json({ success: false, message: error.message || 'Invalid refresh token' });
+            return res.status(401).json({ success: false, message: 'ROTATE_ERR: ' + (error.stack || error.message) });
         }
     } catch (err) {
         next(err);
@@ -172,7 +172,7 @@ exports.forgotPassword = async (req, res, next) => {
         user.resetPasswordExpiry = new Date(Date.now() + 15 * 60 * 1000); // 15 mins expiry
         await user.save();
 
-        await sendEmail(
+        await mailer.sendEmail(
             user.email,
             'Password Reset',
             `<p>Your password reset code is: <strong>${code}</strong></p>`

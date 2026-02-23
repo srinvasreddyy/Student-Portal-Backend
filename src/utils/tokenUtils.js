@@ -102,7 +102,7 @@ class TokenUtils {
         // ROTATION: Remove the old token, issue a new one
         user.refreshTokens.splice(tokenIndex, 1);
 
-        const newPlainTextToken = crypto.randomBytes(40).toString('hex');
+        const newPlainTextToken = `${user._id.toString()}.${crypto.randomBytes(40).toString('hex')}`;
         const newHashedToken = crypto.createHash('sha256').update(newPlainTextToken).digest('hex');
 
         const expiryDate = new Date();

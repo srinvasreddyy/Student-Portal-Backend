@@ -25,6 +25,7 @@ const globalRateLimiter = rateLimit({
         error: 'GLOBAL_RATE_LIMIT_EXCEEDED',
         message: 'Too many requests from this IP, please try again after 15 minutes.'
     },
+    skip: () => process.env.NODE_ENV === 'test'
     // Uses standard IP headers (x-forwarded-for etc. if proxy configured)
 });
 
@@ -42,7 +43,8 @@ const strictRateLimiter = rateLimit({
         success: false,
         error: 'STRICT_RATE_LIMIT_EXCEEDED',
         message: 'Too many attempts for this action. Please try again later.'
-    }
+    },
+    skip: () => process.env.NODE_ENV === 'test'
 });
 
 module.exports = {

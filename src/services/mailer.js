@@ -49,6 +49,24 @@ class MailerService {
     }
 
     /**
+     * Legacy generic sendEmail method
+     */
+    async sendEmail(to, subject, html) {
+        await this.init();
+        const mailOptions = {
+            from: process.env.MAIL_FROM || '"Global Academy Platform" <no-reply@ethereal.email>',
+            to,
+            subject,
+            html
+        };
+        const info = await this.transporter.sendMail(mailOptions);
+        if (this.isEthereal && nodemailer.getTestMessageUrl) {
+            console.log(`Preview URL: ${nodemailer.getTestMessageUrl(info)}`);
+        }
+        return info;
+    }
+
+    /**
      * Replaces simple {{key}} placeholders in HTML string with payload values
      * @param {string} html 
      * @param {object} payload 

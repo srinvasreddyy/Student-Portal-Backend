@@ -10,7 +10,8 @@ jest.mock('nodemailer', () => ({
     createTransport: jest.fn().mockReturnValue({
         sendMail: jest.fn().mockResolvedValue({ messageId: 'mock-id' })
     }),
-    getTestMessageUrl: jest.fn()
+    getTestMessageUrl: jest.fn(),
+    createTestAccount: jest.fn().mockResolvedValue({ user: 'mock', pass: 'mock' })
 }));
 
 describe('Auth & User Phase 1', () => {
@@ -111,7 +112,9 @@ describe('Auth & User Phase 1', () => {
         const refreshRes = await request(app).post('/auth/refresh').send({
             refreshToken: oldRefreshToken
         });
-
+        if (refreshRes.status !== 200) {
+            throw new Error('REFRESH FAILED: ' + JSON.stringify(refreshRes.body));
+        }
         expect(refreshRes.status).toBe(200);
         expect(refreshRes.body.tokens).toHaveProperty('refreshToken');
         const newRefreshToken = refreshRes.body.tokens.refreshToken;
@@ -141,6 +144,7 @@ describe('Auth & User Phase 1', () => {
         const forgotRes = await request(app).post('/auth/forgot-password').send({
             email: 'forgot@test.com'
         });
+        if (forgotRes.status !== 200) console.log('FORGOT ERROR:', forgotRes.body);
 
         expect(forgotRes.status).toBe(200);
 
