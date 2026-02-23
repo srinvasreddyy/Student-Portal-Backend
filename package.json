@@ -1,0 +1,61 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "Backend scaffold for MERN product",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "test": "jest",
+    "lint": "eslint src/**/*.js",
+    "format": "prettier --write \"src/**/*.js\""
+  },
+  "dependencies": {
+    "axios": "^1.13.5",
+    "bcrypt": "^5.1.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "express-mongo-sanitize": "^2.2.0",
+    "express-rate-limit": "^7.4.1",
+    "file-type": "^21.3.0",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.8.4",
+    "multer": "^1.4.5-lts.1",
+    "multer-gridfs-storage": "^5.0.2",
+    "nodemailer": "^6.9.16",
+    "psl": "^1.15.0",
+    "socket.io": "^4.8.1",
+    "tesseract.js": "^7.0.0",
+    "validator": "^13.12.0",
+    "winston": "^3.16.0",
+    "xss": "^1.0.15",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.1",
+    "jest": "^29.7.0",
+    "mongodb-memory-server": "^11.0.1",
+    "nodemon": "^3.1.7",
+    "prettier": "^3.4.1",
+    "supertest": "^7.2.2"
+  },
+  "_comments": {
+    "express": "source: https://www.npmjs.com/package/express",
+    "mongoose": "source: https://www.npmjs.com/package/mongoose",
+    "bcrypt": "source: https://www.npmjs.com/package/bcrypt",
+    "jsonwebtoken": "source: https://www.npmjs.com/package/jsonwebtoken",
+    "nodemailer": "source: https://www.npmjs.com/package/nodemailer",
+    "socket.io": "source: https://www.npmjs.com/package/socket.io",
+    "multer": "source: https://www.npmjs.com/package/multer",
+    "cors": "source: https://www.npmjs.com/package/cors",
+    "helmet": "source: https://www.npmjs.com/package/helmet",
+    "express-rate-limit": "source: https://www.npmjs.com/package/express-rate-limit",
+    "validator": "source: https://www.npmjs.com/package/validator",
+    "winston": "source: https://www.npmjs.com/package/winston",
+    "dotenv": "source: https://www.npmjs.com/package/dotenv"
+  },
+  "author": "",
+  "license": "ISC"
+}

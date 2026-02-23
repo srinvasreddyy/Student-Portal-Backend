@@ -1,0 +1,74 @@
+﻿node.exe : (node:9272) ExperimentalWarning: VM 
+Modules is an experimental feature and might 
+change at any time
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" 
+"C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((nod 
+   e:9272) Exp...nge at any time:String) [], Rem  
+  oteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+(Use `node --trace-warnings ...` to show where 
+the warning was created)
+FAIL tests/chat.admin.test.js (10.414 s)
+  Super Admin Chat Moderation (Phase 10)
+    ├ù Another student cannot delete someone 
+else's message (3 ms)
+    ├ù Student can delete their own message
+    ├ù Super Admin can force delete ANY message
+
+  ΓùÅ Super Admin Chat Moderation (Phase 10) ΓÇ║ 
+Another student cannot delete someone else's 
+message
+
+    ValidationError: Project validation failed: 
+authorType: `Company` is not a valid enum value 
+for path `authorType`.
+
+      at 
+model.Object.<anonymous>.Document.invalidate 
+(node_modules/mongoose/lib/document.js:3381:32)
+      at 
+node_modules/mongoose/lib/document.js:3142:17
+      at 
+node_modules/mongoose/lib/schemaType.js:1446:9
+
+  ΓùÅ Super Admin Chat Moderation (Phase 10) ΓÇ║ 
+Student can delete their own message
+
+    ValidationError: Project validation failed: 
+authorType: `Company` is not a valid enum value 
+for path `authorType`.
+
+      at 
+model.Object.<anonymous>.Document.invalidate 
+(node_modules/mongoose/lib/document.js:3381:32)
+      at 
+node_modules/mongoose/lib/document.js:3142:17
+      at 
+node_modules/mongoose/lib/schemaType.js:1446:9
+
+  ΓùÅ Super Admin Chat Moderation (Phase 10) ΓÇ║ 
+Super Admin can force delete ANY message
+
+    ValidationError: Project validation failed: 
+authorType: `Company` is not a valid enum value 
+for path `authorType`.
+
+      at 
+model.Object.<anonymous>.Document.invalidate 
+(node_modules/mongoose/lib/document.js:3381:32)
+      at 
+node_modules/mongoose/lib/document.js:3142:17
+      at 
+node_modules/mongoose/lib/schemaType.js:1446:9
+
+Test Suites: 1 failed, 1 total
+Tests:       3 failed, 3 total
+Snapshots:   0 total
+Time:        10.613 s, estimated 11 s
+Ran all test suites matching 
+/tests\\chat.admin.test.js/i.

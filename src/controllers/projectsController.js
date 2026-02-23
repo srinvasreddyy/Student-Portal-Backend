@@ -1,0 +1,185 @@
+const Project = require('../models/Project');
+const projectService = require('../services/projectService');
+const mongoose = require('mongoose');
+
+exports.createProject = async (req, res, next) => {
+    try {
+        if (!['company_admin', 'university_admin'].includes(req.user.role)) {
+            return res.status(403).json({ success: false, message: 'Only companies and universities can create projects' });
+        }
+
+        // authorType derived from role
+        const authorType = req.user.role === 'company_admin' ? 'company' : 'university';
+
+        // We assume req.user has a reference to the company/uni ID in their profile/token.
+        // For this implementation, let's assume req.user.organizationId holds it, or user ID if 1:1.
+        // As a fallback for tests, using user._id
+        const authorId = req.user.organizationId || req.user._id;
+
+        const project = await projectService.createProject(authorId, authorType, req.body);
+
+        res.status(201).json({ success: true, data: project });
+    } catch (err) { next(err); }
+};
+
+exports.listProjects = async (req, res, next) => {
+    try {
+        const { techStack, authorType, q, page = 1, limit = 10 } = req.query;
+
+        const query = { status: 'open' };
+
+        if (techStack) query.techStack = { $in: techStack.split(',') };
+        if (authorType) query.authorType = authorType;
+        if (q) {
+            query.$or = [
+                { title: new RegExp(q, 'i') },
+                { description: new RegExp(q, 'i') }
+            ];
+        }
+
+        const skip = (page - 1) * limit;
+
+        // Fetch open projects
+        const projects = await Project.find(query)
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(parseInt(limit));
+
+        // Filter out filled ones conceptually (our model status 'open' should catch this normally
+        // since we flip to 'in_progress', but virtual `isFilled` covers edge cases)
+        const openProjects = projects.filter(p => !p.isFilled);
+
+        const total = await Project.countDocuments(query);
+
+        res.status(200).json({ success: true, count: openProjects.length, total, data: openProjects });
+    } catch (err) { next(err); }
+};
+
+exports.getProject = async (req, res, next) => {
+    try {
+        const project = await Project.findById(req.params.id)
+            .populate('authorRef', 'name officialName country')
+            .populate('acceptedStudents.studentRef', 'name email');
+
+        if (!project) return res.status(404).json({ success: false, message: 'Not found' });
+
+        const isOwner = req.user && (req.user.organizationId || req.user._id).toString() === project.authorRef._id.toString();
+        const isAdmin = req.user && req.user.role === 'super_admin';
+
+        let safeData = project.toObject();
+
+        if (!isOwner && !isAdmin) {
+            // Hide applicant list from public/students
+            delete safeData.applicants;
+        } else {
+            // Populate applicants dynamically if owner
+            await project.populate('applicants.studentRef', 'name email');
+            safeData = project.toObject();
+        }
+
+        res.status(200).json({ success: true, data: safeData });
+    } catch (err) { next(err); }
+};
+
+exports.applyToProject = async (req, res, next) => {
+    try {
+        if (req.user.role !== 'student') {
+            return res.status(403).json({ success: false, message: 'Only students can apply' });
+        }
+
+        await projectService.applyToProject(req.params.id, req.user._id);
+
+        res.status(200).json({ success: true, applied: true, projectId: req.params.id });
+    } catch (err) {
+        if (err.status) return res.status(err.status).json({ success: false, message: err.message });
+        next(err);
+    }
+};
+
+exports.withdrawApplication = async (req, res, next) => {
+    try {
+        if (req.user.role !== 'student') return res.status(403).json({ success: false, message: 'Forbidden' });
+
+        await projectService.withdrawApplication(req.params.id, req.user._id);
+        res.status(200).json({ success: true, withdrawn: true });
+    } catch (err) {
+        if (err.status) return res.status(err.status).json({ success: false, message: err.message });
+        next(err);
+    }
+};
+
+exports.acceptStudent = async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const { studentRef } = req.body;
+        const authorId = req.user.organizationId || req.user._id;
+
+        if (!studentRef) return res.status(400).json({ success: false, message: 'studentRef required' });
+
+        const result = await projectService.acceptStudent(id, studentRef, authorId);
+
+        // Mocking socket emission
+        // io.to(`project_${id}`).emit('project:applicant_accepted', { projectId: id, studentId: studentRef });
+
+        res.status(200).json({ success: true, ...result });
+    } catch (err) {
+        if (err.status) return res.status(err.status).json({ success: false, message: err.message });
+        next(err);
+    }
+};
+
+exports.rejectApplicant = async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const { studentRef, reason } = req.body;
+        const authorId = req.user.organizationId || req.user._id;
+
+        await projectService.rejectApplicant(id, studentRef, authorId);
+
+        // Mocking socket
+        // io.to(`project_${id}`).emit('project:applicant_rejected', { projectId: id, studentId: studentRef, reason });
+
+        res.status(200).json({ success: true, rejected: true });
+    } catch (err) {
+        if (err.status) return res.status(err.status).json({ success: false, message: err.message });
+        next(err);
+    }
+};
+
+exports.completeProject = async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const authorId = req.user.organizationId || req.user._id;
+
+        const result = await projectService.completeProject(id, authorId);
+
+        // Mocking socket
+        // io.to(`project_${id}`).emit('project:completed', { projectId: id });
+
+        res.status(200).json({ success: true, ...result });
+    } catch (err) {
+        if (err.status) return res.status(err.status).json({ success: false, message: err.message });
+        next(err);
+    }
+};
+
+exports.cancelProject = async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const authorId = req.user.organizationId || req.user._id;
+
+        await projectService.cancelProject(id, authorId);
+        res.status(200).json({ success: true, cancelled: true });
+    } catch (err) {
+        if (err.status) return res.status(err.status).json({ success: false, message: err.message });
+        next(err);
+    }
+};
+
+// Admin only
+exports.adminListProjects = async (req, res, next) => {
+    try {
+        const projects = await Project.find().sort({ createdAt: -1 });
+        res.status(200).json({ success: true, count: projects.length, data: projects });
+    } catch (err) { next(err); }
+};
