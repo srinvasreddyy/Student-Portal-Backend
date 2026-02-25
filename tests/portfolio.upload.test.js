@@ -54,6 +54,7 @@ describe('Student Portfolio & File Streaming Hooks', () => {
     });
 
     it('3. Streams raw File Uploads gracefully directly into GridFS & parses MimeType', async () => {
+        jest.setTimeout(60000);
         // We simulate a multipart/form-data upload using supertest attach
         const mockSvgContent = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>');
 

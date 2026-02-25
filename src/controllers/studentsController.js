@@ -95,7 +95,6 @@ exports.addPortfolioItem = async (req, res, next) => {
 
             // Upload to GridFS via service
             // Note: stream handles limit truncations natively throwing 'limit' if over 20MB
-            sniffStream.resume();
 
             let fileData;
             try {
@@ -103,15 +102,16 @@ exports.addPortfolioItem = async (req, res, next) => {
                 const uploadStream = gridBucket.openUploadStream(filename, { metadata });
 
                 await new Promise((resolve, reject) => {
-                    sniffStream.pipe(uploadStream)
-                        .on('error', reject)
-                        .on('finish', resolve);
+                    uploadStream.on('finish', resolve);
+                    uploadStream.on('error', reject);
+                    sniffStream.on('error', reject);
+                    sniffStream.pipe(uploadStream);
                 });
 
                 fileData = { _id: uploadStream.id };
 
             } catch (e) {
-                return res.status(500).json({ success: false, message: 'Upload stream failed' });
+                return next(e);
             }
 
             const item = await PortfolioItem.create({
