@@ -1,0 +1,19 @@
+=== C:\Users\sanik\Desktop\Student\backend\tests\chat.socket.test.js ===
+unauthorized user cannot join project room
+Error: thrown: "Exceeded timeout of 30000 ms for a test while waiting for `done()` to be called.
+Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout."
+    at test (C:\Users\sanik\Desktop\Student\backend\tests\chat.socket.test.js:95:5)
+    at _dispatchDescribe (C:\Users\sanik\Desktop\Student\backend\node_modules\jest-circus\build\index.js:91:26)
+    at describe (C:\Users\sanik\Desktop\Student\backend\node_modules\jest-circus\build\index.js:55:5)
+    at Object.describe (C:\Users\sanik\Desktop\Student\backend\tests\chat.socket.test.js:66:1)
+    at Runtime._execModule (C:\Users\sanik\Desktop\Student\backend\node_modules\jest-runtime\build\index.js:1439:24)
+    at Runtime._loadModule (C:\Users\sanik\Desktop
+---
+receives broadcast message when another user sends
+TypeError: Cannot read properties of undefined (reading 'id')
+    at Socket.id (C:\Users\sanik\Desktop\Student\backend\src\middleware\socketRateLimiter.js:59:28)
+    at Socket.emit (node:events:519:28)
+    at Socket.emitUntyped (C:\Users\sanik\Desktop\Student\backend\node_modules\socket.io\dist\typed-events.js:69:22)
+    at C:\Users\sanik\Desktop\Student\backend\node_modules\socket.io\dist\socket.js:697:39
+    at processTicksAndRejections (node:internal/process/task_queues:85:11)
+---

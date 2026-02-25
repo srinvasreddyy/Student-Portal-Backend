@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { MongoMemoryServer } = require('mongodb-memory-server');
+const { MongoMemoryReplSet } = require('mongodb-memory-server');
 const EmailSendAttempt = require('../src/models/EmailSendAttempt');
 const mailerService = require('../src/services/mailer');
 const emailJobProcessor = require('../src/jobs/emailJobProcessor');
@@ -7,7 +7,7 @@ const emailJobProcessor = require('../src/jobs/emailJobProcessor');
 let mongoServer;
 
 beforeAll(async () => {
-    mongoServer = await MongoMemoryServer.create();
+    mongoServer = await MongoMemoryReplSet.create();
     await mongoose.connect(mongoServer.getUri());
 });
 
@@ -56,7 +56,8 @@ describe('Mailer Retry and Processor Worker', () => {
         });
 
         // Force ready condition by manipulating updatedAt to bypass backoff
-        await EmailSendAttempt.updateOne({ _id: doc._id }, { $set: { updatedAt: new Date(1) } });
+        // Must pass timestamps: false or Mongoose auto-sets updatedAt to now
+        await EmailSendAttempt.updateOne({ _id: doc._id }, { $set: { updatedAt: new Date(1) } }, { timestamps: false });
 
         mailerService.init = jest.fn().mockResolvedValue();
         mailerService.transporter = {

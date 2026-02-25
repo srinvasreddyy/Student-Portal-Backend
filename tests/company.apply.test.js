@@ -1,19 +1,22 @@
 const request = require('supertest');
 const mongoose = require('mongoose');
-const app = require('../src/app');
-const Company = require('../src/models/Company');
-const config = require('../src/config');
-const axios = require('axios');
-const bcrypt = require('bcrypt');
 
-// Mock out external dependencies
+// Mock out external dependencies before local requires
 jest.mock('axios');
 jest.mock('nodemailer', () => ({
     createTransport: jest.fn().mockReturnValue({
         sendMail: jest.fn().mockResolvedValue({ messageId: 'mock-id' })
     }),
+    createTestAccount: jest.fn().mockResolvedValue({ user: 'mock', pass: 'mock' }),
     getTestMessageUrl: jest.fn()
 }));
+
+const app = require('../src/app');
+const Company = require('../src/models/Company');
+const AuditLog = require('../src/models/AuditLog');
+const config = require('../src/config');
+const axios = require('axios');
+const bcrypt = require('bcrypt');
 
 // Setup app router for testing since it mounts routes in app.js
 const companiesRoutes = require('../src/routes/companies');
@@ -25,6 +28,9 @@ describe('Company Verification Subsystem', () => {
         if (mongoose.connection.readyState === 0) {
             await mongoose.connect(config.db.uri || 'mongodb://localhost:27017/mern_db_test');
         }
+        await Company.createCollection();
+        await require('../src/models/AuditLog').createCollection();
+        await require('../src/models/EmailSendAttempt').createCollection();
     });
 
     afterAll(async () => {
@@ -156,10 +162,10 @@ describe('Company Verification Subsystem', () => {
         };
 
         const res = await request(app).post('/companies/apply').send(payload);
-        const company = await Company.findById(res.body.applicationId);
+        const logs = await AuditLog.find({ targetId: res.body.applicationId });
 
-        expect(company.auditLogs.length).toBeGreaterThan(0);
-        expect(company.auditLogs[0].action).toBe('company_apply');
+        expect(logs.length).toBeGreaterThan(0);
+        expect(logs[0].actionType).toBe('apply');
     });
 
     it('7. No match fallback - requires upload', async () => {
@@ -173,6 +179,7 @@ describe('Company Verification Subsystem', () => {
         };
 
         const res = await request(app).post('/companies/apply').send(payload);
+
         expect(res.status).toBe(201);
         expect(res.body.lookup.provider).toBe('opencorporates_no_match');
 

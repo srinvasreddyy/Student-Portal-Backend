@@ -37,6 +37,9 @@ async function fetchWithRetry(requestFn, retries = MAX_RETRIES) {
                 const retryAfter = error.response.headers['retry-after'] || 5;
                 logger.warn(`Rate limit hit. Retrying after ${retryAfter} seconds...`);
                 await sleep(retryAfter * 1000);
+            } else if (error.response && error.response.status === 401) {
+                logger.warn(`External API authentication failed (401). Skipping retries.`);
+                throw error;
             } else if (i < retries - 1) {
                 logger.warn(`External API request failed. Retrying... (${i + 1}/${retries})`);
                 await sleep(RETRY_DELAY * Math.pow(2, i)); // Exponential backoff

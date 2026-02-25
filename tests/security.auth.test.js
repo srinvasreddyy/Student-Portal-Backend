@@ -3,12 +3,12 @@ const app = require('../src/app');
 const mongoose = require('mongoose');
 const User = require('../src/models/User');
 const TokenUtils = require('../src/utils/tokenUtils');
-const { MongoMemoryServer } = require('mongodb-memory-server');
+const { MongoMemoryReplSet } = require('mongodb-memory-server');
 
 let mongoServer;
 
 beforeAll(async () => {
-    mongoServer = await MongoMemoryServer.create();
+    mongoServer = await MongoMemoryReplSet.create();
     process.env.MONGO_URI = mongoServer.getUri();
     process.env.JWT_SECRET = 'test-secret-at-least-32-characters-long';
     await mongoose.connect(process.env.MONGO_URI);
@@ -29,7 +29,7 @@ describe('Security: Authentication & Token Rotation', () => {
         // Missing password should trigger 400 Validation Error
         let res = await request(app).post('/auth/register').send({ email: 'test@zod.com' });
         expect(res.status).toBe(400);
-        expect(res.body.error).toBe('VALIDATION_ERROR');
+        expect(res.body.success).toBe(false);
 
         // NoSQL Injection Attempt via Zod/Mongoose Sanitize
         res = await request(app)

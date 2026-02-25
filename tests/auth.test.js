@@ -32,7 +32,7 @@ describe('Auth & User Phase 1', () => {
     it('1. Register student -> persisted -> login works', async () => {
         const payload = {
             email: 'student@test.com',
-            password: 'password123',
+            password: 'Password123!',
             role: 'student'
         };
 
@@ -45,7 +45,7 @@ describe('Auth & User Phase 1', () => {
         // Login
         const loginRes = await request(app).post('/auth/login').send({
             email: 'student@test.com',
-            password: 'password123'
+            password: 'Password123!'
         });
 
         expect(loginRes.status).toBe(200);
@@ -60,7 +60,7 @@ describe('Auth & User Phase 1', () => {
     it('2. Register company admin -> status=pending -> login blocked', async () => {
         const payload = {
             email: 'admin@company.com',
-            password: 'password123',
+            password: 'Password123!',
             role: 'company_admin'
         };
 
@@ -70,7 +70,7 @@ describe('Auth & User Phase 1', () => {
 
         const loginRes = await request(app).post('/auth/login').send({
             email: 'admin@company.com',
-            password: 'password123'
+            password: 'Password123!'
         });
 
         // Should be blocked because status != active
@@ -100,10 +100,10 @@ describe('Auth & User Phase 1', () => {
     it('4. Refresh token rotation works -> old refresh token rejected', async () => {
         // Manually register/login to get tokens
         await request(app).post('/auth/register').send({
-            email: 'rotate@test.com', password: 'password123', role: 'student'
+            email: 'rotate@test.com', password: 'Password123!', role: 'student'
         });
         const loginRes = await request(app).post('/auth/login').send({
-            email: 'rotate@test.com', password: 'password123'
+            email: 'rotate@test.com', password: 'Password123!'
         });
 
         const oldRefreshToken = loginRes.body.tokens.refreshToken;
@@ -112,9 +112,8 @@ describe('Auth & User Phase 1', () => {
         const refreshRes = await request(app).post('/auth/refresh').send({
             refreshToken: oldRefreshToken
         });
-        if (refreshRes.status !== 200) {
-            throw new Error('REFRESH FAILED: ' + JSON.stringify(refreshRes.body));
-        }
+        if (refreshRes.status !== 200) console.log('REFRESH ERROR:', refreshRes.body);
+
         expect(refreshRes.status).toBe(200);
         expect(refreshRes.body.tokens).toHaveProperty('refreshToken');
         const newRefreshToken = refreshRes.body.tokens.refreshToken;
@@ -137,7 +136,7 @@ describe('Auth & User Phase 1', () => {
 
     it('5. Forgot/reset password flow with expiry', async () => {
         await request(app).post('/auth/register').send({
-            email: 'forgot@test.com', password: 'oldpassword', role: 'student'
+            email: 'forgot@test.com', password: 'OldPassword123!', role: 'student'
         });
 
         // Forgot password
@@ -157,7 +156,7 @@ describe('Auth & User Phase 1', () => {
         const resetFail = await request(app).post('/auth/reset-password').send({
             email: 'forgot@test.com',
             code: '123456',
-            newPassword: 'newpassword123'
+            newPassword: 'NewPassword123!'
         });
 
         expect(resetFail.status).toBe(400);

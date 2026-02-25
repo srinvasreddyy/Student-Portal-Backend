@@ -34,7 +34,7 @@ const validateRequest = (schema) => async (req, res, next) => {
             return res.status(400).json({
                 success: false,
                 error: 'VALIDATION_ERROR',
-                details: error.errors.map(e => ({ path: e.path.join('.'), message: e.message }))
+                details: (error.issues || error.errors || []).map(e => ({ path: e.path.join('.'), message: e.message }))
             });
         }
         next(error);
@@ -46,17 +46,21 @@ const validateRequest = (schema) => async (req, res, next) => {
  */
 const commonSchemas = {
     // Standard auth login shape
-    login: z.object({
-        email: z.string().email('Invalid email format').trim().toLowerCase(),
-        password: z.string().min(8, 'Password must be at least 8 characters')
-    }).strict(),
+    login: {
+        body: z.object({
+            email: z.string().email('Invalid email format').trim().toLowerCase(),
+            password: z.string().min(8, 'Password must be at least 8 characters')
+        }).strict()
+    },
 
     // Registration (base)
-    register: z.object({
-        email: z.string().email().trim().toLowerCase(),
-        password: z.string().min(8).regex(/[A-Z]/, 'Must contain uppercase').regex(/[0-9]/, 'Must contain number'),
-        role: z.enum(['student', 'company', 'university']).optional()
-    }).strict()
+    register: {
+        body: z.object({
+            email: z.string().email().trim().toLowerCase(),
+            password: z.string().min(8).regex(/[A-Z]/, 'Must contain at least one uppercase letter').regex(/[0-9]/, 'Must contain at least one number'),
+            role: z.enum(['student', 'company_admin', 'university_admin']).optional()
+        }).strict()
+    }
 };
 
 module.exports = {

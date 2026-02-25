@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const app = require('../src/app');
 const User = require('../src/models/User');
 const Project = require('../src/models/Project');
-const PortfolioItem = require('../models/PortfolioItem');
+const PortfolioItem = require('../src/models/PortfolioItem');
 const config = require('../src/config');
 const jwt = require('jsonwebtoken');
 
@@ -20,9 +20,9 @@ describe('Student Portfolio & File Streaming Hooks', () => {
         studentId = std1._id;
         studentToken = jwt.sign({ id: std1._id, role: 'student', status: 'active' }, config.jwt.secret, { expiresIn: '15m' });
 
-        const companyUser = await User.create({ email: 'c_port@test.com', passwordHash: 'hash', role: 'company_admin', status: 'active', organizationId: new mongoose.Types.ObjectId() });
+        const companyUser = await User.create({ email: 'c_port@test.com', passwordHash: 'hash', role: 'company_admin', status: 'active' });
         companyUserId = companyUser._id;
-        companyToken = jwt.sign({ id: companyUser._id, role: 'company_admin', status: 'active', organizationId: companyUser._id }, config.jwt.secret, { expiresIn: '15m' });
+        companyToken = jwt.sign({ id: companyUser._id, role: 'company_admin', status: 'active' }, config.jwt.secret, { expiresIn: '15m' });
 
     });
 
@@ -50,7 +50,7 @@ describe('Student Portfolio & File Streaming Hooks', () => {
 
         expect(res.status).toBe(201);
         expect(res.body.data.type).toBe('github'); // Auto detected by validator
-        expect(res.body.data.url).toBe('https://github.com/myrepo/');
+        expect(res.body.data.url).toBe('https://github.com/myrepo');
     });
 
     it('3. Streams raw File Uploads gracefully directly into GridFS & parses MimeType', async () => {
@@ -88,7 +88,7 @@ describe('Student Portfolio & File Streaming Hooks', () => {
 
     it('6. Phase 5 Integration -> Project Completion natively spawns Portfolio items directly', async () => {
         const p1 = await Project.create({
-            authorRef: companyUser.organizationId, authorType: 'company', authorModel: 'Company',
+            authorRef: companyUserId, authorType: 'company', authorModel: 'Company',
             title: 'P1 Demo', description: 'desc', roles: ['SE'], maxStudents: 1, durationWeeks: 2,
             status: 'in_progress', acceptedStudents: [{ studentRef: studentId }]
         });

@@ -130,7 +130,47 @@ async function getDomainsForUniversity(name, country) {
     return [];
 }
 
+/**
+ * Uses Hipo Labs free Universities API to search globally
+ * Endpoint: http://universities.hipolabs.com/search?name={name}
+ */
+async function getGlobalUniversities(query) {
+    if (!query || query.length < 3) return [];
+
+    try {
+        const results = await searchUniversities(query, '');
+        // Map to structured list and limit
+        return results.slice(0, 50).map(uni => ({
+            universityName: uni.name,
+            website: uni.web_pages && uni.web_pages.length > 0 ? uni.web_pages[0] : null,
+            country: uni.country
+        }));
+    } catch (err) {
+        logger.error(`Global uni search failed: ${err.message}`);
+        return [];
+    }
+}
+
+/**
+ * Uses Hipo Labs free Universities API to search within a country
+ */
+async function getUniversitiesByCountry(countryName, query = '') {
+    try {
+        const results = await searchUniversities(query, countryName);
+        return results.slice(0, 50).map(uni => ({
+            universityName: uni.name,
+            website: uni.web_pages && uni.web_pages.length > 0 ? uni.web_pages[0] : null,
+            country: uni.country
+        }));
+    } catch (err) {
+        logger.error(`Country uni search failed: ${err.message}`);
+        return [];
+    }
+}
+
 module.exports = {
     searchUniversities,
     getDomainsForUniversity,
+    getGlobalUniversities,
+    getUniversitiesByCountry
 };

@@ -14,6 +14,10 @@ const ALLOWED_MIMES = uploads.allowedMimes;
 const streamUpload = (req, res, next) => {
     if (req.method !== 'POST') return next();
 
+    // Skip non-multipart requests (e.g., JSON link-only submissions)
+    const contentType = req.headers['content-type'] || '';
+    if (!contentType.includes('multipart/form-data')) return next();
+
     let busboy;
     try {
         busboy = Busboy({

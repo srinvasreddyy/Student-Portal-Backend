@@ -6,3 +6,15 @@ coverage/
 dist/
 build/
 .vscode/
+
+# Test output and logs
+jest_*.json
+jest_*.txt
+errors.txt
+report.txt
+console_logs.txt
+admin_tests_out.txt
+auth_test_out.txt
+test_err.json
+test_err.log
+*.log

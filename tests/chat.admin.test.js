@@ -1,7 +1,7 @@
 const request = require('supertest');
 const app = require('../src/app');
 const mongoose = require('mongoose');
-const { MongoMemoryServer } = require('mongodb-memory-server');
+const { MongoMemoryReplSet } = require('mongodb-memory-server');
 const User = require('../src/models/User');
 const Project = require('../src/models/Project');
 const ChatMessage = require('../src/models/ChatMessage');
@@ -10,7 +10,7 @@ const TokenUtils = require('../src/utils/tokenUtils');
 let mongoServer;
 
 beforeAll(async () => {
-    mongoServer = await MongoMemoryServer.create();
+    mongoServer = await MongoMemoryReplSet.create();
     process.env.MONGO_URI = mongoServer.getUri();
     process.env.JWT_SECRET = 'test-secret-at-least-32-characters-long';
     await mongoose.connect(process.env.MONGO_URI);

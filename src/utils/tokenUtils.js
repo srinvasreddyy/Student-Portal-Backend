@@ -9,7 +9,6 @@ const crypto = require('crypto');
 const config = require('../config');
 const { jwt: jwtConfig } = require('../config/security');
 const logger = require('./logger');
-const User = require('../models/User');
 
 class TokenUtils {
     /**
@@ -68,6 +67,7 @@ class TokenUtils {
         if (parts.length !== 2) throw new Error('Invalid token format');
         const userId = parts[0];
 
+        const User = require('../models/User');
         const user = await User.findById(userId);
         if (!user) throw new Error('User not found');
 
@@ -86,7 +86,7 @@ class TokenUtils {
             logger.warn(`REFRESH TOKEN REUSE DETECTED! Revoking all sessions for user.`, { userId, ip: reqIp });
             user.refreshTokens = [];
             await user.save();
-            throw new Error('TOKEN_REUSE_DETECTED');
+            throw new Error('Token compromised - reuse detected');
         }
 
         const matchedToken = user.refreshTokens[tokenIndex];
@@ -137,6 +137,7 @@ class TokenUtils {
      * but we check `user.tokenVersion` during sensitive DB queries to actively reject.
      */
     static async revokeAllUserTokens(userId) {
+        const User = require('../models/User');
         await User.findByIdAndUpdate(userId, {
             $inc: { tokenVersion: 1 }, // Invalidate all extant native access JWTs functionally
             $set: { refreshTokens: [] } // Wipes all long lived active sessions

@@ -1,4 +1,4 @@
-const { MongoMemoryServer } = require('mongodb-memory-server');
+const { MongoMemoryReplSet } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
 const config = require('../src/config');
 
@@ -6,7 +6,7 @@ let mongoServer;
 
 beforeAll(async () => {
     if (!mongoServer) {
-        mongoServer = await MongoMemoryServer.create();
+        mongoServer = await MongoMemoryReplSet.create();
         const uri = mongoServer.getUri();
         process.env.MONGO_URI = uri;
         config.db.uri = uri;

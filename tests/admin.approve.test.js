@@ -11,7 +11,9 @@ const jwt = require('jsonwebtoken');
 jest.mock('nodemailer', () => ({
     createTransport: jest.fn().mockReturnValue({
         sendMail: jest.fn().mockResolvedValue({ messageId: 'm-id', response: '250 OK' })
-    })
+    }),
+    createTestAccount: jest.fn().mockResolvedValue({ user: 'mock', pass: 'mock' }),
+    getTestMessageUrl: jest.fn()
 }));
 
 describe('Admin Applications Routing & Workflows', () => {
@@ -60,6 +62,8 @@ describe('Admin Applications Routing & Workflows', () => {
         const res = await request(app).post(`/admin/applications/${companyId}/approve`)
             .set('Authorization', `Bearer ${adminToken}`).send(payload);
 
+        if (res.status !== 200) throw new Error(JSON.stringify(res.body));
+
         expect(res.status).toBe(200);
         expect(res.body.status).toBe('verified');
         expect(res.body.emailAttemptId).toBeDefined();
@@ -90,7 +94,7 @@ describe('Admin Applications Routing & Workflows', () => {
         expect(c.status).toBe('rejected');
 
         const tryEmail = await EmailSendAttempt.findOne({});
-        expect(tryEmail.template).toBe('reject');
+        expect(tryEmail.templateName).toBe('reject');
     });
 
     it('4. Hold path — places on hold, no email', async () => {

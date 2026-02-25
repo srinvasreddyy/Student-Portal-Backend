@@ -73,14 +73,16 @@ class EmailJobProcessor {
                 // Attempt send (mailer updates doc internally on success)
                 await mailerService._processSendAttempt(job);
             } catch (err) {
+                // Reload: _processSendAttempt already incremented + saved the attempt count
+                const updatedJob = await EmailSendAttempt.findById(job._id);
                 // The mailer tracked the attempt. If we hit the max, mark it completely failed.
-                if (job.attempts >= MAX_RETRIES) {
-                    job.status = 'failed';
-                    await job.save();
+                if (updatedJob.attempts >= MAX_RETRIES) {
+                    updatedJob.status = 'failed';
+                    await updatedJob.save();
                     console.error(`Job ${job._id} marked as definitively failed after ${MAX_RETRIES} attempts.`);
                 } else {
                     // Remains 'queued', will be picked up next poll if backoff expires
-                    console.warn(`Job ${job._id} failed temp. Retries: ${job.attempts}/${MAX_RETRIES}`);
+                    console.warn(`Job ${updatedJob._id} failed temp. Retries: ${updatedJob.attempts}/${MAX_RETRIES}`);
                 }
             }
         }

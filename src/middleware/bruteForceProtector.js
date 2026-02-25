@@ -23,7 +23,8 @@ class BruteForceProtector {
      */
     static enforce() {
         return (req, res, next) => {
-            const key = req.body.email ? req.body.email.toLowerCase() : req.ip;
+            const rawEmail = req.body.email;
+            const key = (typeof rawEmail === 'string') ? rawEmail.toLowerCase() : req.ip;
             const record = bruteForceStore.get(key);
 
             if (record) {

@@ -32,7 +32,9 @@ const userSchema = new mongoose.Schema({
     resetPasswordHash: { type: String },
     resetPasswordExpiry: { type: Date },
     refreshTokens: [refreshTokenSchema],
-    tokenVersion: { type: Number, default: 0 } // Tracks mass revocations
+    tokenVersion: { type: Number, default: 0 }, // Tracks mass revocations
+    activeProjectRef: { type: mongoose.Schema.Types.ObjectId, ref: 'Project' },
+    portfolio: [{ type: mongoose.Schema.Types.ObjectId, ref: 'PortfolioItem' }]
 }, { timestamps: true });
 
 // Hash password before saving if modified

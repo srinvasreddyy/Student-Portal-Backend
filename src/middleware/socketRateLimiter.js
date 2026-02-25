@@ -53,9 +53,13 @@ const socketRateLimiter = (socket, next) => {
  * Alternate approach using a helper function to wrap event handlers directly.
  * This is more robust for checking limits per event.
  */
-const withRateLimit = (handler) => {
-    return (payload, ack, socket) => {
+const withRateLimit = (handler, socket) => {
+    return (payload, ack) => {
         const now = Date.now();
+        if (!socket) {
+            // Failsafe if socket is somehow undefined (e.g. in certain test setups)
+            return handler(payload, ack);
+        }
         const key = socket.id; // Could also use socket.user.id for user-level limiting across tabs
 
         if (!messageCounts.has(key)) {

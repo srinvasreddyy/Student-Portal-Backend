@@ -1,5 +1,14 @@
 const request = require('supertest');
 const mongoose = require('mongoose');
+
+jest.mock('nodemailer', () => ({
+    createTransport: jest.fn().mockReturnValue({
+        sendMail: jest.fn().mockResolvedValue({ messageId: 'm-id-audit', response: '250 OK' })
+    }),
+    createTestAccount: jest.fn().mockResolvedValue({ user: 'mock', pass: 'mock' }),
+    getTestMessageUrl: jest.fn()
+}));
+
 const app = require('../src/app');
 const University = require('../src/models/University');
 const User = require('../src/models/User');
@@ -8,20 +17,17 @@ const EmailSendAttempt = require('../src/models/EmailSendAttempt');
 const config = require('../src/config');
 const jwt = require('jsonwebtoken');
 
-jest.mock('nodemailer', () => ({
-    createTransport: jest.fn().mockReturnValue({
-        sendMail: jest.fn().mockResolvedValue({ messageId: 'm-id-audit', response: '250 OK' })
-    })
-}));
-
 describe('Admin Audit & Fetch Workflows', () => {
     let adminToken;
     let uniId;
 
     beforeAll(async () => {
         if (mongoose.connection.readyState === 0) await mongoose.connect(config.db.uri);
+        await University.createCollection();
+        await AuditLog.createCollection();
+        await EmailSendAttempt.createCollection();
         const adminUser = await User.create({ email: 'super@test.com', passwordHash: 'hash', role: 'super_admin', status: 'active' });
-        adminToken = jwt.sign({ id: adminUser._id, role: 'super_admin', status: 'active' }, config.jwt.secret, { expiresIn: '15m' });
+        adminToken = jwt.sign({ id: adminUser._id, role: 'super_admin', status: 'active', email: 'super@test.com' }, config.jwt.secret, { expiresIn: '15m' });
     });
 
     afterAll(async () => { await mongoose.connection.close(); });

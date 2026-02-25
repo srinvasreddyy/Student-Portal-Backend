@@ -9,6 +9,12 @@ const EmailSendAttempt = require('../models/EmailSendAttempt');
  * Nodemailer Error Handling: Transporter returns a Promise -> try/catch
  */
 
+const templates = {
+    approve: (url) => `<p>Your application is approved. Proceed to <a href="${url || '#'}">Onboarding</a>.</p>`,
+    hold: (reason) => `<p>Your application is on hold. Reason: ${reason}</p>`,
+    reject: (reason) => `<p>Your application was rejected. Reason: ${reason}</p>`
+};
+
 class MailerService {
     constructor() {
         this.transporter = null;
@@ -66,6 +72,16 @@ class MailerService {
         return info;
     }
 
+    async sendVerificationEmail(to, code, applicationId) {
+        return this.sendWithRetry({
+            applicationId,
+            to,
+            subject: 'Verify Your Application',
+            htmlContent: `<p>Your verification code is: <strong>${code}</strong></p><p>This code expires in 15 minutes.</p>`,
+            force: true
+        });
+    }
+
     /**
      * Replaces simple {{key}} placeholders in HTML string with payload values
      * @param {string} html 
@@ -99,6 +115,45 @@ class MailerService {
 
         // In a robust system, this triggers Bull/Redis or our in-process worker
         return { success: true, attemptId: saved._id };
+    }
+
+    async sendWithRetry({ applicationId, targetType, to, subject, templateName, htmlContent, sendKey, force }) {
+        if (!force && sendKey) {
+            const existing = await EmailSendAttempt.findOne({ sendKey });
+            if (existing) return { success: true, messageId: existing.messageId };
+        }
+
+        const attempt = new EmailSendAttempt({
+            applicationId,
+            to,
+            subject,
+            templateName,
+            sendKey,
+            status: 'queued'
+        });
+        await attempt.save();
+
+        try {
+            await this.init();
+            const mailOptions = {
+                from: process.env.MAIL_FROM || '"Global Academy Platform" <no-reply@ethereal.email>',
+                to,
+                subject,
+                html: htmlContent
+            };
+            const info = await this.transporter.sendMail(mailOptions);
+            attempt.status = 'sent';
+            attempt.messageId = info.messageId || 'm-id';
+            attempt.attempts += 1;
+            await attempt.save();
+            return { success: true, messageId: attempt.messageId };
+        } catch (error) {
+            attempt.status = 'failed';
+            attempt.lastError = error.message;
+            attempt.attempts += 1;
+            await attempt.save();
+            throw error;
+        }
     }
 
     /**
@@ -161,4 +216,9 @@ class MailerService {
     }
 }
 
-module.exports = new MailerService();
+const mailerInstance = new MailerService();
+// Bind the method so that destructuring works correctly
+mailerInstance.sendWithRetry = mailerInstance.sendWithRetry.bind(mailerInstance);
+mailerInstance.sendVerificationEmail = mailerInstance.sendVerificationEmail.bind(mailerInstance);
+
+module.exports = Object.assign(mailerInstance, { templates });

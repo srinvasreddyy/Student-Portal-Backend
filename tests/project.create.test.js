@@ -14,9 +14,9 @@ describe('Project Create Flow', () => {
     beforeAll(async () => {
         if (mongoose.connection.readyState === 0) await mongoose.connect(config.db.uri);
 
-        const companyUser = await User.create({ email: 'company@test.com', passwordHash: 'hash', role: 'company_admin', status: 'active', organizationId: new mongoose.Types.ObjectId() });
-        companyAdminId = companyUser.organizationId;
-        companyToken = jwt.sign({ id: companyUser._id, role: 'company_admin', status: 'active', organizationId: companyAdminId }, config.jwt.secret, { expiresIn: '15m' });
+        const companyUser = await User.create({ email: 'company@test.com', passwordHash: 'hash', role: 'company_admin', status: 'active' });
+        companyAdminId = companyUser._id;
+        companyToken = jwt.sign({ id: companyUser._id, role: 'company_admin', status: 'active' }, config.jwt.secret, { expiresIn: '15m' });
 
         const stdUser = await User.create({ email: 'studentX@test.com', passwordHash: 'hash', role: 'student', status: 'active' });
         studentToken = jwt.sign({ id: stdUser._id, role: 'student', status: 'active' }, config.jwt.secret, { expiresIn: '15m' });

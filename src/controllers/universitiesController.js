@@ -92,7 +92,7 @@ exports.applyUniversity = async (req, res, next) => {
             rawResponse: lookupResponse ? Array.from(lookupResponse).slice(0, 5) : null // cap size
         };
 
-        newUniversity.addAuditLog('system', 'university_apply', { lookup: lookupProvider });
+        await newUniversity.addAuditLog('system@system.com', 'system', 'apply', { lookup: lookupProvider }, { session });
 
         // Send Mail
         if (targetDomain || warningObj === 'domain_mismatch' || warningObj === 'mx_absent_fallback') {
@@ -155,7 +155,7 @@ exports.verifyEmail = async (req, res, next) => {
             university.verified = true;
         }
 
-        university.addAuditLog('system', 'email_verified', { autoVerified: university.verified });
+        await university.addAuditLog('system@system.com', 'system', 'email_verified', { autoVerified: university.verified });
         await university.save();
 
         res.status(200).json({ success: true, message: 'Verified successfully', status: university.status });
@@ -194,7 +194,7 @@ exports.uploadDocument = async (req, res, next) => {
         if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
 
         university.documents.push(req.file.id);
-        university.addAuditLog('system', 'document_uploaded', { fileId: req.file.id });
+        await university.addAuditLog('system@system.com', 'system', 'document_uploaded', { fileId: req.file.id });
 
         if (!university.verification.externalLookup) {
             university.verification.externalLookup = {};

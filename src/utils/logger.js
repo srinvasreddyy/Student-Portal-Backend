@@ -27,8 +27,18 @@ const maskPII = winston.format((info) => {
         return obj;
     };
 
-    // Create a deep copy to avoid modifying references in app memory
-    const maskedInfo = traverseAndMask(JSON.parse(JSON.stringify(info)));
+    // Instead of deep cloning the whole info object (which drops Symbols),
+    // we should iterate and deep clone/mask only standard properties.
+    const maskedInfo = Object.assign({}, info);
+
+    // Copy Symbols over because Winston needs them
+    const symbols = Object.getOwnPropertySymbols(info);
+    for (const sym of symbols) {
+        maskedInfo[sym] = info[sym];
+    }
+
+    // Now mask the normal properties
+    traverseAndMask(maskedInfo);
     return maskedInfo;
 });
 

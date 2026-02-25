@@ -94,7 +94,7 @@ describe('Project Apply & Complete Lifecycle', () => {
     it('5. Cannot apply if student is active somewhere else', async () => {
         // Mock active project state
         await User.findByIdAndUpdate(student1Id, { activeProjectRef: new mongoose.Types.ObjectId() });
-        const res = await request(app).post(`/projects/${proj1Id}/apply`).set('Authorization', `Bearer ${studentToken1}`);
+        const res = await request(app).post(`/projects/${projId}/apply`).set('Authorization', `Bearer ${studentToken1}`);
         expect(res.status).toBe(400);
         expect(res.body.message).toBe('student_already_active');
     });
@@ -114,7 +114,9 @@ describe('Project Apply & Complete Lifecycle', () => {
         // Verify active status cleared and portoflio updated
         const u = await User.findById(student1Id);
         expect(u.activeProjectRef).toBeUndefined(); // Unset
-        expect(u.portfolio.length).toBeGreaterThan(0);
-        expect(u.portfolio[0].projectRef.toString()).toBe(projId.toString());
+
+        const items = await mongoose.model('PortfolioItem').find({ ownerRef: student1Id });
+        expect(items.length).toBeGreaterThan(0);
+        expect(items[0].url).toContain(projId.toString());
     });
 });

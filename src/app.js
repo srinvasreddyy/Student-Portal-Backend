@@ -43,7 +43,7 @@ app.use(express.urlencoded({ extended: true, limit: '100kb' }));
 
 // Health and Readiness
 app.get('/healthz', (req, res) => {
-    res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
+    res.status(200).json({ status: 'OK', uptime: process.uptime(), timestamp: new Date().toISOString() });
 });
 
 app.get('/ready', (req, res) => {
@@ -64,7 +64,9 @@ app.use('/projects', projectsRoutes);
 app.use('/students', studentsRoutes);
 app.use('/chat', chatRoutes); // Mounted chat routes
 const notificationRoutes = require('./routes/notifications');
+const registrationRoutes = require('./routes/registration');
 app.use('/api', notificationRoutes); // Has /notifications and /admin/email-sends
+app.use('/api', registrationRoutes);
 
 // JSON error parsing and centralized error handler
 app.use(errorHandler);

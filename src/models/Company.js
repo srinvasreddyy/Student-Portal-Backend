@@ -58,16 +58,16 @@ companySchema.statics.normalizeDomain = function (domain, pslLibrary) {
 };
 
 // Methods to add audit logs
-companySchema.methods.addAuditLog = async function (actorEmail, actorRole, action, details) {
-    const log = await AuditLog.create({
+companySchema.methods.addAuditLog = async function (actorEmail, actorRole, action, details, options = {}) {
+    const logs = await AuditLog.create([{
         actorEmail: actorEmail,
         actorRole: actorRole || 'system',
         targetType: 'company',
         targetId: this._id,
         actionType: action,
         details: details
-    });
-    this.auditLogs.push(log._id);
+    }], options);
+    this.auditLogs.push(logs[0]._id);
 };
 
 module.exports = mongoose.model('Company', companySchema);

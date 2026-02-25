@@ -3,10 +3,10 @@ const { Server } = require('socket.io');
 const Client = require('socket.io-client');
 const { createServer } = require('http');
 const { initSocketServer } = require('../src/sockets');
-const { generateTokens } = require('../src/utils/tokenUtils');
+const TokenUtils = require('../src/utils/tokenUtils');
 const User = require('../src/models/User');
 const Project = require('../src/models/Project');
-const { MongoMemoryServer } = require('mongodb-memory-server');
+const { MongoMemoryReplSet } = require('mongodb-memory-server');
 
 let mongoServer;
 let io, serverSocket, clientSocket;
@@ -15,7 +15,7 @@ let testUser, testProject, validToken;
 let port;
 
 beforeAll(async () => {
-    mongoServer = await MongoMemoryServer.create();
+    mongoServer = await MongoMemoryReplSet.create();
     await mongoose.connect(mongoServer.getUri());
 
     httpServer = createServer();
@@ -36,8 +36,7 @@ beforeAll(async () => {
         profile: { firstName: 'Test', lastName: 'Student' }
     });
 
-    const tokens = generateTokens(testUser);
-    validToken = tokens.accessToken;
+    validToken = TokenUtils.generateAccessToken(testUser);
 
     testProject = await Project.create({
         authorRef: new mongoose.Types.ObjectId(),
@@ -93,29 +92,38 @@ describe('Socket.io Integration Tests', () => {
         });
     });
 
-    test('unauthorized user cannot join project room', (done) => {
+    test('unauthorized user cannot join project room', async () => {
         const unauthorizedUser = new mongoose.Types.ObjectId();
-        const tokens = generateTokens({ _id: unauthorizedUser, role: 'student', email: 'unauth@test.com', status: 'active' });
+        const tokens = { accessToken: TokenUtils.generateAccessToken({ _id: unauthorizedUser, role: 'student', email: 'unauth@test.com', status: 'active' }) };
+
+        // Create the user in DB FIRST so socketAuth can find it
+        await User.create({
+            _id: unauthorizedUser,
+            email: 'unauth@test.com',
+            passwordHash: 'xx',
+            role: 'student',
+            status: 'active'
+        });
 
         const badClient = new Client(`http://localhost:${port}`, {
             auth: { token: `Bearer ${tokens.accessToken}` }
         });
 
-        badClient.on('connect', () => {
-            // Let's create a temp user in DB to pass socketAuth (which queries DB)
-            User.create({
-                _id: unauthorizedUser,
-                email: 'unauth@test.com',
-                passwordHash: 'xx',
-                role: 'student',
-                status: 'active'
-            }).then(() => {
+        return new Promise((resolve, reject) => {
+            badClient.on('connect', () => {
                 badClient.emit('room:join', { projectId: testProject._id.toString() }, (response) => {
-                    expect(response.success).toBe(false);
-                    expect(response.error).toMatch(/Unauthorized/);
-                    badClient.close();
-                    done();
+                    try {
+                        expect(response.success).toBe(false);
+                        expect(response.error).toMatch(/Unauthorized/);
+                        badClient.close();
+                        resolve();
+                    } catch (e) { reject(e); }
                 });
+            });
+
+            badClient.on('connect_error', (err) => {
+                badClient.close();
+                reject(err);
             });
         });
     });

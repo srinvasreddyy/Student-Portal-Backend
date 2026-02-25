@@ -1,12 +1,12 @@
 const mongoose = require('mongoose');
 const chatService = require('../src/services/chatService');
 const ChatMessage = require('../src/models/ChatMessage');
-const { MongoMemoryServer } = require('mongodb-memory-server');
+const { MongoMemoryReplSet } = require('mongodb-memory-server');
 
 let mongoServer;
 
 beforeAll(async () => {
-    mongoServer = await MongoMemoryServer.create();
+    mongoServer = await MongoMemoryReplSet.create();
     await mongoose.connect(mongoServer.getUri());
 });
 

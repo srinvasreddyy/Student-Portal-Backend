@@ -85,7 +85,7 @@ exports.applyCompany = async (req, res, next) => {
         }
 
         newCompany.verification.externalLookup = lookupResult;
-        newCompany.addAuditLog('system', 'company_apply', { lookup: lookupResult.provider });
+        await newCompany.addAuditLog('system@system.com', 'system', 'apply', { lookup: lookupResult.provider }, { session });
 
         // 4. Send Verification Email
         const code = generateCode();
@@ -118,7 +118,7 @@ exports.applyCompany = async (req, res, next) => {
     } catch (error) {
         await session.abortTransaction();
         session.endSession();
-        next(error);
+        return res.status(500).json({ success: false, message: 'APPLY_ERR: ' + (error.stack || error.message) });
     }
 };
 
@@ -156,7 +156,7 @@ exports.verifyEmail = async (req, res, next) => {
             company.status = 'verified';
         }
 
-        company.addAuditLog('system', 'email_verified', { statusUpdatedTo: company.status });
+        await company.addAuditLog('system@system.com', 'system', 'email_verified', { statusUpdatedTo: company.status });
         await company.save();
 
         res.status(200).json({ success: true, message: 'Email verified successfully', status: company.status });
@@ -197,7 +197,7 @@ exports.uploadDocument = async (req, res, next) => {
         // we assume Tesseract takes stream or we bypass true OCR on GridFS streams for local dev.
         // Since Phase 2 demands local OCR (TesseractJS), we will add a log indicating setup.
         // Full implementation requires: `const stream = bucket.openDownloadStream(req.file.id)` piped to buffers.
-        company.addAuditLog('system', 'document_uploaded', { fileId: req.file.id });
+        await company.addAuditLog('system@system.com', 'system', 'document_uploaded', { fileId: req.file.id });
 
         // We append note about OCR fallback
         if (!company.verification.externalLookup) company.verification.externalLookup = {};
@@ -225,7 +225,7 @@ exports.markCompany = async (req, res, next) => {
         if (!company) return res.status(404).json({ success: false, message: 'Company not found' });
 
         company.status = status;
-        company.addAuditLog(req.user?.id || 'super_admin_placeholder', `marked_${status}`, { reason });
+        await company.addAuditLog(req.user?.email || 'system@system.com', req.user?.role || 'system', `marked_${status}`, { reason });
 
         await company.save();
 

@@ -10,7 +10,6 @@ const auditLogSchema = new mongoose.Schema({
 
     actionType: {
         type: String,
-        enum: ['approve', 'reject', 'hold', 'resend_email', 'add_note', 'apply', 'upload'],
         required: true
     },
 

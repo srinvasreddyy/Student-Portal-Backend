@@ -54,16 +54,16 @@ universitySchema.statics.normalizeDomain = function (domain, pslLibrary) {
 };
 
 // Methods to add audit logs
-universitySchema.methods.addAuditLog = async function (actorEmail, actorRole, action, details) {
-    const log = await AuditLog.create({
+universitySchema.methods.addAuditLog = async function (actorEmail, actorRole, action, details, options = {}) {
+    const logs = await AuditLog.create([{
         actorEmail: actorEmail,
         actorRole: actorRole || 'system',
         targetType: 'university',
         targetId: this._id,
         actionType: action,
         details: details
-    });
-    this.auditLogs.push(log._id);
+    }], options);
+    this.auditLogs.push(logs[0]._id);
 };
 
 // Atomically mark verification status

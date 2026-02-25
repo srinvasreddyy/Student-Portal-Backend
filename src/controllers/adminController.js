@@ -112,8 +112,7 @@ exports.approveApplication = async (req, res, next) => {
         appModel.auditLogs.push(logEntry._id);
         await appModel.save({ session });
 
-        await session.commitTransaction();
-        session.endSession();
+        // Hold commit until email queue row is generated
 
         // Send Email OUTSIDE transaction so we don't hold the lock if SMTP is slow
         let emailAttemptId = null;
@@ -135,9 +134,14 @@ exports.approveApplication = async (req, res, next) => {
             }
         }
 
+        await session.commitTransaction();
+        session.endSession();
+
         res.status(200).json({ success: true, status: appModel.status, auditLogId: logEntry._id, emailAttemptId });
     } catch (err) {
-        await session.abortTransaction();
+        if (session.inTransaction()) {
+            await session.abortTransaction();
+        }
         session.endSession();
         next(err);
     }
@@ -214,7 +218,9 @@ exports.rejectApplication = async (req, res, next) => {
         }
 
         res.status(200).json({ success: true, status: appModel.status, auditLogId: logEntry._id });
-    } catch (err) { next(err); }
+    } catch (err) {
+        next(err);
+    }
 };
 
 exports.addNote = async (req, res, next) => {

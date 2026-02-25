@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { MongoMemoryServer } = require('mongodb-memory-server');
+const { MongoMemoryReplSet } = require('mongodb-memory-server');
 const notificationService = require('../src/services/notificationService');
 const Notification = require('../src/models/Notification');
 const EmailSendAttempt = require('../src/models/EmailSendAttempt');
@@ -7,7 +7,7 @@ const EmailSendAttempt = require('../src/models/EmailSendAttempt');
 let mongoServer;
 
 beforeAll(async () => {
-    mongoServer = await MongoMemoryServer.create();
+    mongoServer = await MongoMemoryReplSet.create();
     await mongoose.connect(mongoServer.getUri());
 });
 

@@ -1,20 +1,28 @@
 const request = require('supertest');
 const mongoose = require('mongoose');
+
+jest.mock('axios');
+jest.mock('nodemailer', () => ({
+    createTransport: jest.fn().mockReturnValue({
+        sendMail: jest.fn().mockResolvedValue({ messageId: 'mock-id' })
+    }),
+    createTestAccount: jest.fn().mockResolvedValue({ user: 'mock', pass: 'mock' }),
+    getTestMessageUrl: jest.fn()
+}));
+
 const app = require('../src/app');
 const University = require('../src/models/University');
+const AuditLog = require('../src/models/AuditLog');
 const config = require('../src/config');
 const axios = require('axios');
 const bcrypt = require('bcrypt');
 
-jest.mock('axios');
-jest.mock('nodemailer', () => ({
-    createTransport: jest.fn().mockReturnValue({ sendMail: jest.fn().mockResolvedValue({ messageId: 'mock-id' }) }),
-    getTestMessageUrl: jest.fn()
-}));
-
 describe('University Verify & Apply Subsystem', () => {
     beforeAll(async () => {
         if (mongoose.connection.readyState === 0) await mongoose.connect(config.db.uri || 'mongodb://localhost:27017/mern_db_test');
+        await University.createCollection();
+        await require('../src/models/AuditLog').createCollection();
+        await require('../src/models/EmailSendAttempt').createCollection();
     });
 
     afterAll(async () => {
@@ -72,12 +80,12 @@ describe('University Verify & Apply Subsystem', () => {
 
     it('6. Domain mismatch warning', async () => {
         axios.get.mockResolvedValueOnce({
-            data: [{ name: 'University of Example', country: 'US', domains: ['example.edu'], web_pages: [] }]
+            data: [{ name: 'University of Mismatch', country: 'US', domains: ['example.edu'], web_pages: [] }]
         });
 
         const payload = {
             country: 'US',
-            universityName: 'University of Example',
+            universityName: 'University of Mismatch',
             officialDomain: 'example.edu',
             representative: { email: 'admin@otherdomain.com', name: 'Dr Bob' }
         };
@@ -115,12 +123,13 @@ describe('University Verify & Apply Subsystem', () => {
         const res = await request(app).post('/universities/apply').send({
             country: 'CA', universityName: 'Log Uni', representative: { email: 'admin@log.ca' }
         });
+        expect(res.status).toBe(201);
 
         const statusRes = await request(app).get(`/universities/${res.body.applicationId}/status`);
         expect(statusRes.status).toBe(200);
 
-        const logs = statusRes.body.data.auditLogs;
+        const logs = await AuditLog.find({ targetId: res.body.applicationId });
         expect(logs.length).toBeGreaterThan(0);
-        expect(logs[0].action).toBe('university_apply');
+        expect(logs[0].actionType).toBe('apply');
     });
 });
