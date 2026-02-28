@@ -75,11 +75,6 @@ exports.getGlobalCompanies = async (req, res) => {
                 companyName: item.company.name,
                 companyNumber: item.company.company_number
             }));
-        } else if (data && data.name) {
-            companyList = [{
-                companyName: data.name,
-                companyNumber: data.company_number
-            }];
         }
 
         return sendSuccess(res, companyList);

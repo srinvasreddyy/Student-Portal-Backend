@@ -11,9 +11,9 @@ const acceptedStudentSchema = new mongoose.Schema({
 }, { _id: false });
 
 const projectSchema = new mongoose.Schema({
-    authorRef: { type: mongoose.Schema.Types.ObjectId, required: true, refPath: 'authorModel' },
-    authorType: { type: String, enum: ['company', 'university'], required: true },
-    authorModel: { type: String, enum: ['Company', 'University'], required: true }, // For dynamic refPath
+    postedByModel: { type: String, enum: ['Company', 'University'], required: true },
+    postedBy: { type: mongoose.Schema.Types.ObjectId, required: true, refPath: 'postedByModel' },
+    streamChannelId: { type: String },
 
     title: { type: String, required: true, trim: true },
     description: { type: String, required: true },
@@ -21,8 +21,8 @@ const projectSchema = new mongoose.Schema({
     techStack: [{ type: String }],
     videoUrl: { type: String },
 
-    maxStudents: { type: Number, required: true, min: 1 },
-    durationWeeks: { type: Number, required: true, min: 1, max: 4 },
+    maxStudentsRequired: { type: Number, required: true, min: 1 },
+    durationInWeeks: { type: Number, required: true, max: 4 },
 
     status: {
         type: String,
@@ -30,22 +30,24 @@ const projectSchema = new mongoose.Schema({
         default: 'open'
     },
 
-    applicants: [applicantSchema],
+    appliedStudents: [applicantSchema],
     acceptedStudents: [acceptedStudentSchema]
 }, { timestamps: true });
 
-// Indexes for feed and quick lookups
-projectSchema.index({ status: 1, createdAt: -1 });
+// Indexes for query performance
+projectSchema.index({ status: 1 });
+projectSchema.index({ postedBy: 1, postedByModel: 1 });
+
 projectSchema.index({ 'acceptedStudents.studentRef': 1 }); // Lookup students in projects
-projectSchema.index({ 'applicants.studentRef': 1 });
+projectSchema.index({ 'appliedStudents.studentRef': 1 });
 
 // Virtuals
 projectSchema.virtual('isFilled').get(function () {
-    return this.acceptedStudents.length >= this.maxStudents;
+    return this.acceptedStudents.length >= this.maxStudentsRequired;
 });
 
 projectSchema.virtual('availableSlots').get(function () {
-    return Math.max(0, this.maxStudents - this.acceptedStudents.length);
+    return Math.max(0, this.maxStudentsRequired - this.acceptedStudents.length);
 });
 
 // Ensure virtuals are included when converting to JSON/Object

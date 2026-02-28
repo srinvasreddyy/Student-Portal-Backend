@@ -12,7 +12,6 @@ const universitiesRoutes = require('./routes/universities');
 const adminRoutes = require('./routes/admin');
 const projectsRoutes = require('./routes/projects');
 const studentsRoutes = require('./routes/students');
-const chatRoutes = require('./routes/chat');
 
 const app = express();
 
@@ -62,7 +61,6 @@ app.use('/universities', universitiesRoutes);
 app.use('/admin', adminRoutes);
 app.use('/projects', projectsRoutes);
 app.use('/students', studentsRoutes);
-app.use('/chat', chatRoutes); // Mounted chat routes
 const notificationRoutes = require('./routes/notifications');
 const registrationRoutes = require('./routes/registration');
 app.use('/api', notificationRoutes); // Has /notifications and /admin/email-sends

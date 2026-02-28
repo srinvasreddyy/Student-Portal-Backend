@@ -1,6 +1,5 @@
 const http = require('http');
 const mongoose = require('mongoose');
-const { Server } = require('socket.io');
 
 const app = require('./app');
 const config = require('./config');
@@ -8,8 +7,6 @@ const logger = require('./utils/logger');
 
 const server = http.createServer(app);
 
-// Socket.io initialization from Phase 7
-const { initSocketServer } = require('./sockets');
 
 const envValidator = require('./utils/envValidator');
 try {
@@ -18,8 +15,6 @@ try {
     console.error(error.message);
     process.exit(1);
 }
-
-const io = initSocketServer(server);
 
 async function startServer() {
     try {

@@ -29,7 +29,8 @@ exports.listProjects = async (req, res, next) => {
         const query = { status: 'open' };
 
         if (techStack) query.techStack = { $in: techStack.split(',') };
-        if (authorType) query.authorType = authorType;
+        if (authorType) query.postedByModel = authorType === 'company' ? 'Company' : 'University';
+
         if (q) {
             query.$or = [
                 { title: new RegExp(q, 'i') },
@@ -39,17 +40,42 @@ exports.listProjects = async (req, res, next) => {
 
         const skip = (page - 1) * limit;
 
-        // Fetch open projects
-        const projects = await Project.find(query)
-            .sort({ createdAt: -1 })
-            .skip(skip)
-            .limit(parseInt(limit));
+        const pipeline = [
+            { $match: query },
+            {
+                $addFields: {
+                    currentAcceptedCount: { $size: { $ifNull: ["$acceptedStudents", []] } }
+                }
+            },
+            {
+                $match: {
+                    $expr: { $lt: ["$currentAcceptedCount", "$maxStudentsRequired"] }
+                }
+            },
+            { $sort: { createdAt: -1 } },
+            { $skip: skip },
+            { $limit: parseInt(limit) }
+        ];
 
-        // Filter out filled ones conceptually (our model status 'open' should catch this normally
-        // since we flip to 'in_progress', but virtual `isFilled` covers edge cases)
-        const openProjects = projects.filter(p => !p.isFilled);
+        const openProjects = await Project.aggregate(pipeline);
 
-        const total = await Project.countDocuments(query);
+        const totalPipeline = [
+            { $match: query },
+            {
+                $addFields: {
+                    currentAcceptedCount: { $size: { $ifNull: ["$acceptedStudents", []] } }
+                }
+            },
+            {
+                $match: {
+                    $expr: { $lt: ["$currentAcceptedCount", "$maxStudentsRequired"] }
+                }
+            },
+            { $count: "total" }
+        ];
+
+        const totalResult = await Project.aggregate(totalPipeline);
+        const total = totalResult.length > 0 ? totalResult[0].total : 0;
 
         res.status(200).json({ success: true, count: openProjects.length, total, data: openProjects });
     } catch (err) { next(err); }
@@ -58,22 +84,22 @@ exports.listProjects = async (req, res, next) => {
 exports.getProject = async (req, res, next) => {
     try {
         const project = await Project.findById(req.params.id)
-            .populate('authorRef', 'name officialName country')
+            .populate('postedBy', 'name officialName country')
             .populate('acceptedStudents.studentRef', 'name email');
 
         if (!project) return res.status(404).json({ success: false, message: 'Not found' });
 
-        const isOwner = req.user && (req.user.organizationId || req.user._id).toString() === project.authorRef._id.toString();
+        const isOwner = req.user && (req.user.organizationId || req.user._id).toString() === project.postedBy._id.toString();
         const isAdmin = req.user && req.user.role === 'super_admin';
 
         let safeData = project.toObject();
 
         if (!isOwner && !isAdmin) {
             // Hide applicant list from public/students
-            delete safeData.applicants;
+            delete safeData.appliedStudents;
         } else {
             // Populate applicants dynamically if owner
-            await project.populate('applicants.studentRef', 'name email');
+            await project.populate('appliedStudents.studentRef', 'name email');
             safeData = project.toObject();
         }
 
@@ -118,9 +144,6 @@ exports.acceptStudent = async (req, res, next) => {
 
         const result = await projectService.acceptStudent(id, studentRef, authorId);
 
-        // Mocking socket emission
-        // io.to(`project_${id}`).emit('project:applicant_accepted', { projectId: id, studentId: studentRef });
-
         res.status(200).json({ success: true, ...result });
     } catch (err) {
         if (err.status) return res.status(err.status).json({ success: false, message: err.message });
@@ -136,9 +159,6 @@ exports.rejectApplicant = async (req, res, next) => {
 
         await projectService.rejectApplicant(id, studentRef, authorId);
 
-        // Mocking socket
-        // io.to(`project_${id}`).emit('project:applicant_rejected', { projectId: id, studentId: studentRef, reason });
-
         res.status(200).json({ success: true, rejected: true });
     } catch (err) {
         if (err.status) return res.status(err.status).json({ success: false, message: err.message });
@@ -152,9 +172,6 @@ exports.completeProject = async (req, res, next) => {
         const authorId = req.user.organizationId || req.user._id;
 
         const result = await projectService.completeProject(id, authorId);
-
-        // Mocking socket
-        // io.to(`project_${id}`).emit('project:completed', { projectId: id });
 
         res.status(200).json({ success: true, ...result });
     } catch (err) {
@@ -180,6 +197,27 @@ exports.cancelProject = async (req, res, next) => {
 exports.adminListProjects = async (req, res, next) => {
     try {
         const projects = await Project.find().sort({ createdAt: -1 });
+        res.status(200).json({ success: true, count: projects.length, data: projects });
+    } catch (err) { next(err); }
+};
+
+exports.getMyProjects = async (req, res, next) => {
+    try {
+        const userId = req.user.organizationId || req.user._id;
+        const role = req.user.role;
+
+        let query = {};
+        if (['company_admin', 'university_admin'].includes(role)) {
+            query = { postedBy: userId };
+        } else if (role === 'student') {
+            query = { 'acceptedStudents.studentRef': userId };
+        } else if (role === 'super_admin') {
+            // Give all stream-enabled projects for super admin monitoring
+            query = {};
+        }
+
+        const projects = await Project.find(query).sort({ createdAt: -1 });
+
         res.status(200).json({ success: true, count: projects.length, data: projects });
     } catch (err) { next(err); }
 };

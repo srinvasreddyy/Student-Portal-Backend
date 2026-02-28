@@ -5,6 +5,7 @@ const mailer = require('../services/mailer');
 const config = require('../config');
 const TokenUtils = require('../utils/tokenUtils');
 const BruteForceProtector = require('../middleware/bruteForceProtector');
+const serverClient = require('../config/streamClient');
 
 // Generate numeric code
 const generateCode = () => Math.floor(100000 + Math.random() * 900000).toString();
@@ -84,8 +85,8 @@ exports.login = async (req, res, next) => {
             return res.status(401).json({ success: false, message: 'Invalid credentials' });
         }
 
-        if (user.status !== 'active') {
-            return res.status(401).json({ success: false, message: `Account is ${user.status}` });
+        if (user.status === 'rejected') {
+            return res.status(401).json({ success: false, message: 'Account registration was rejected' });
         }
 
         const isMatch = await user.comparePassword(password);
@@ -98,9 +99,23 @@ exports.login = async (req, res, next) => {
 
         const accessToken = TokenUtils.generateAccessToken(user);
         const refreshToken = await TokenUtils.generateRefreshToken(user);
-        const tokens = { accessToken, refreshToken };
 
-        res.status(200).json({ success: true, tokens, user: { id: user._id, role: user.role, status: user.status } });
+        // Initialize Stream User and Token
+        let streamToken = null;
+        try {
+            await serverClient.upsertUser({
+                id: user._id.toString(),
+                name: user.email,
+                role: user.role === 'student' ? 'user' : 'admin'
+            });
+            streamToken = serverClient.createToken(user._id.toString());
+        } catch (streamErr) {
+            console.error(`Stream Chat user creation failed: ${streamErr.message}`);
+        }
+
+        const tokens = { accessToken, refreshToken, streamToken };
+
+        res.status(200).json({ success: true, tokens, user: { id: user._id, email: user.email, role: user.role, status: user.status } });
     } catch (error) {
         next(error);
     }

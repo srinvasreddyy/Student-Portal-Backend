@@ -76,27 +76,27 @@ function mapCountryToJurisdiction(country) {
 }
 
 async function lookupOpenCorporates(companyName, country) {
-    const jurisdiction = mapCountryToJurisdiction(country);
-    const tokenParams = config.vendors.openCorporatesToken ? `&api_token=${config.vendors.openCorporatesToken}` : '';
-    const url = `https://api.opencorporates.com/v0.4.8/companies/search?q=${encodeURIComponent(companyName)}&jurisdiction_code=${jurisdiction}${tokenParams}`;
+    // We are spoofing the 'OpenCorporates' function name to use Wikipedia's free public Search API
+    // so the frontend still gets a global list of organizations without requiring any API keys.
+    const url = `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(companyName)}&limit=10&namespace=0&format=json`;
 
-    const requestFn = () => axios.get(url);
-
+    const requestFn = () => axios.get(url, { headers: { 'User-Agent': 'StudentPortalApp/1.0 (test@example.com)' } });
     const response = await fetchWithRetry(requestFn);
 
-    const companies = response.data?.results?.companies || [];
-    if (companies.length === 0) return null;
-
-    // Define confidence heuristic (e.g. name exactly matches or API score is high)
-    const bestMatch = companies[0].company;
-    if (!bestMatch) return null;
-
-    // Simple heuristic: if name matches case-insensitively
-    if (bestMatch.name.toLowerCase() === companyName.toLowerCase()) {
-        return bestMatch;
+    // Wikipedia opensearch returns: [ "search term", ["Result 1", "Result 2"], ["", ""], ["url1", "url2"] ]
+    if (!response.data || !response.data[1] || response.data[1].length === 0) {
+        return null; // No results
     }
 
-    return null; // Low confidence
+    const companyNames = response.data[1];
+
+    // Map to the format the registration controller expects
+    return companyNames.map(name => ({
+        company: {
+            name: name,
+            company_number: 'N/A (Global)' // Wikipedia doesn't have registry numbers
+        }
+    }));
 }
 
 async function ocrExtractText(buffer) {

@@ -7,6 +7,7 @@ const validateProjectPayload = require('../middleware/validateProjectPayload');
 
 // Public / Authenticated Student endpoints
 router.get('/', authenticate, asyncWrapper(projectsController.listProjects));
+router.get('/me', authenticate, asyncWrapper(projectsController.getMyProjects));
 router.get('/:id', authenticate, asyncWrapper(projectsController.getProject));
 
 router.post('/:id/apply', authenticate, authorize('student'), asyncWrapper(projectsController.applyToProject));
