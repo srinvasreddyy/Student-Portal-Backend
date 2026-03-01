@@ -4,6 +4,7 @@ const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
 const Company = require('../models/Company');
 const UniversityAdmin = require('../models/UniversityAdmin');
+const University = require('../models/University');
 const { lookupCompaniesHouse, lookupOpenCorporates } = require('../services/companyLookupService');
 // We need a university lookup service, which we will stub/implement using HipoLabs as per requirements
 const { getUniversitiesByCountry, getGlobalUniversities } = require('../services/universityLookupService');
@@ -228,7 +229,7 @@ exports.registerUniversity = async (req, res) => {
     session.startTransaction();
 
     try {
-        const { organizationName, country, website, officialEmail, phone, representativeName, password } = req.body;
+        const { organizationName, country, website, officialEmail, phone, representativeName, repRole, repDob, repLocation, repEmail, password } = req.body;
 
         // 1. Re-verify Domain
         const verifyResult = await verifyDomainAndEmail(website, officialEmail);
@@ -238,40 +239,54 @@ exports.registerUniversity = async (req, res) => {
         }
 
         // 2. Check for duplicates
-        const normalizedEmail = officialEmail.toLowerCase().trim();
-        const existingEmail = await UniversityAdmin.findOne({ officialEmail: normalizedEmail }).session(session);
+        const normalizedRepEmail = (repEmail || officialEmail).toLowerCase().trim();
+        const existingEmail = await User.findOne({ email: normalizedRepEmail }).session(session);
         if (existingEmail) {
             await session.abortTransaction();
             return sendError(res, 409, 'Email is already registered.', 'DUPLICATE_EMAIL');
         }
 
-        const existingOrg = await UniversityAdmin.findOne({ organizationName, country }).session(session);
+        const existingOrg = await University.findOne({ name: organizationName, country }).session(session);
         if (existingOrg) {
             await session.abortTransaction();
             return sendError(res, 409, 'This university is already registered in this country.', 'DUPLICATE_ORGANIZATION');
         }
 
-        // 3. Create
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
-
-        const newUni = new UniversityAdmin({
-            organizationName,
-            country,
-            website,
-            officialEmail: normalizedEmail,
-            phone,
-            representativeName,
-            password: hashedPassword,
-            isVerified: true,
-            verificationMethod: 'internal_domain_match',
-            role: 'university'
+        // 3. Create the User (University Admin)
+        const newUser = new User({
+            email: normalizedRepEmail,
+            passwordHash: password, // Pre-save hook will hash it
+            role: 'university_admin',
+            status: 'pending',
+            profile: { representativeName, phone }
         });
 
+        // 4. Create the University Entity
+        const websiteDomain = getBaseDomain(website);
+        const newUni = new University({
+            name: organizationName,
+            country,
+            website,
+            domains: websiteDomain ? [websiteDomain] : [],
+            representative: {
+                user: newUser._id,
+                name: representativeName,
+                role: repRole,
+                dob: repDob,
+                location: repLocation,
+                email: normalizedRepEmail
+            },
+            status: 'pending',
+            verification: {
+                emailVerified: true // Trusting the internal domain check flow for now
+            }
+        });
+
+        await newUser.save({ session });
         await newUni.save({ session });
         await session.commitTransaction();
 
-        return sendSuccess(res, { adminId: newUni._id, organizationName: newUni.organizationName });
+        return sendSuccess(res, { adminId: newUser._id, organizationName: newUni.name });
 
     } catch (error) {
         await session.abortTransaction();
