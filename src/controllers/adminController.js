@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const Company = require('../models/Company');
 const University = require('../models/University');
+const User = require('../models/User');
 const AuditLog = require('../models/AuditLog');
 const { sendWithRetry, templates } = require('../services/mailer');
 
@@ -95,6 +96,25 @@ exports.approveApplication = async (req, res, next) => {
         // Apply transition
         appModel.status = 'verified';
         if (type === 'university') appModel.verified = true;
+
+        // Activate associated User account
+        if (appModel.representative && appModel.representative.user) {
+            const associatedUser = await User.findById(appModel.representative.user);
+            if (associatedUser) {
+                associatedUser.status = 'active';
+                await associatedUser.save({ session });
+            }
+        } else {
+            // Fallback: Try matching by email
+            const emailToMatch = type === 'company' ? appModel.companyEmail : appModel.representative?.email;
+            if (emailToMatch) {
+                const associatedUser = await User.findOne({ email: emailToMatch.toLowerCase() });
+                if (associatedUser) {
+                    associatedUser.status = 'active';
+                    await associatedUser.save({ session });
+                }
+            }
+        }
 
         // Create log & link it
         const [logEntry] = await AuditLog.create([{

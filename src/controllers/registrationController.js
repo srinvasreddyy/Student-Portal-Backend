@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 const { body, validationResult } = require('express-validator');
-const CompanyAdmin = require('../models/CompanyAdmin');
+const User = require('../models/User');
+const Company = require('../models/Company');
 const UniversityAdmin = require('../models/UniversityAdmin');
 const { lookupCompaniesHouse, lookupOpenCorporates } = require('../services/companyLookupService');
 // We need a university lookup service, which we will stub/implement using HipoLabs as per requirements
@@ -116,52 +117,68 @@ exports.registerCompany = async (req, res) => {
     session.startTransaction();
 
     try {
-        const { organizationName, country, website, officialEmail, phone, representativeName, password } = req.body;
+        const { organizationName, country, website, officialEmail, phone, representativeName, password, numberOfEmployees, industry, fullAddress } = req.body;
 
         // 1. Re-verify Domain (Never trust frontend)
         const verifyResult = await verifyDomainAndEmail(website, officialEmail);
         if (!verifyResult.success) {
-            throw new Error(verifyResult.message);
+            await session.abortTransaction();
+            return sendError(res, 400, verifyResult.message, verifyResult.errorCode);
         }
 
         // 2. Check for exact duplicates
         const normalizedEmail = officialEmail.toLowerCase().trim();
-        const existingEmail = await CompanyAdmin.findOne({ officialEmail: normalizedEmail }).session(session);
+        const existingEmail = await User.findOne({ email: normalizedEmail }).session(session);
         if (existingEmail) {
             await session.abortTransaction();
             return sendError(res, 409, 'Email is already registered.', 'DUPLICATE_EMAIL');
         }
 
-        const existingOrg = await CompanyAdmin.findOne({ organizationName, country }).session(session);
+        const existingOrg = await Company.findOne({ officialName: organizationName, country }).session(session);
         if (existingOrg) {
             await session.abortTransaction();
             return sendError(res, 409, 'This organization is already registered in this country.', 'DUPLICATE_ORGANIZATION');
         }
 
-        // 3. Hash pass and Create
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
-
-        const newCompany = new CompanyAdmin({
-            organizationName,
-            country,
-            website,
-            officialEmail: normalizedEmail,
-            phone,
-            representativeName,
-            password: hashedPassword,
-            isVerified: true, // We trust our internal domain match
-            verificationMethod: 'internal_domain_match',
-            role: 'company'
+        // 3. Create the User (Company Admin)
+        const newUser = new User({
+            email: normalizedEmail,
+            passwordHash: password, // Pre-save hook will hash it
+            role: 'company_admin',
+            status: 'pending',
+            profile: { representativeName, phone }
         });
 
+        // 4. Create the Company Entity
+        const websiteDomain = getBaseDomain(website);
+        const newCompany = new Company({
+            officialName: organizationName,
+            country,
+            website,
+            domains: websiteDomain ? [websiteDomain] : [],
+            companyEmail: normalizedEmail,
+            numberOfEmployees,
+            industry,
+            fullAddress,
+            representative: {
+                user: newUser._id,
+                name: representativeName
+            },
+            status: 'pending',
+            verification: {
+                emailVerified: true // Trusting the internal domain check flow for now
+            }
+        });
+
+        await newUser.save({ session });
         await newCompany.save({ session });
         await session.commitTransaction();
 
-        return sendSuccess(res, { adminId: newCompany._id, organizationName: newCompany.organizationName });
+        return sendSuccess(res, { adminId: newUser._id, organizationName: newCompany.officialName });
 
     } catch (error) {
         await session.abortTransaction();
+        console.error('REGISTRATION ERROR:', error);
         logger.error(`Company Registration Error: ${error.message}`);
         // Send safe errors, prevent NoSQL injection trace leaks
         if (error.message.includes('Public email domains') || error.message.includes('does not match')) {
@@ -216,7 +233,8 @@ exports.registerUniversity = async (req, res) => {
         // 1. Re-verify Domain
         const verifyResult = await verifyDomainAndEmail(website, officialEmail);
         if (!verifyResult.success) {
-            throw new Error(verifyResult.message);
+            await session.abortTransaction();
+            return sendError(res, 400, verifyResult.message, verifyResult.errorCode);
         }
 
         // 2. Check for duplicates

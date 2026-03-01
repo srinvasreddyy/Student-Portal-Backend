@@ -21,6 +21,9 @@ const companySchema = new mongoose.Schema(
         aliases: [{ type: String }],
         website: { type: String },
         domains: [{ type: String }], // Normalized, lowercased, public-suffix trimmed variants
+        numberOfEmployees: { type: String, enum: ['1-10', '11-50', '51-200', '201-500', '500+'] },
+        industry: { type: String },
+        fullAddress: { type: String },
         representative: {
             user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
             name: { type: String },
