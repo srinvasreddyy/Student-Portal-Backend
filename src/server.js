@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const app = require('./app');
 const config = require('./config');
 const logger = require('./utils/logger');
+const seedSuperAdmin = require('./utils/seedSuperAdmin');
 
 const server = http.createServer(app);
 
@@ -21,6 +22,9 @@ async function startServer() {
         // Connect to MongoDB
         await mongoose.connect(config.db.uri);
         logger.info('Connected to MongoDB');
+
+        // Ensure Super Admin exists in the database
+        await seedSuperAdmin();
 
         // Start Express server
         server.listen(config.app.port, () => {

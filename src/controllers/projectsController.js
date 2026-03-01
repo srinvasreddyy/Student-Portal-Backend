@@ -23,10 +23,10 @@ exports.uploadDocument = async (req, res, next) => {
         const { fileId, filename } = await storageService.uploadFileStream({
             fileStream: req.streamedFile.stream,
             filename: req.streamedFile.filename,
-            metadata: { 
-                uploader: req.user._id, 
-                type: 'project_document', 
-                mimeType: req.streamedFile.mimeType 
+            metadata: {
+                uploader: req.user._id,
+                type: 'project_document',
+                mimeType: req.streamedFile.mimeType
             }
         });
 
@@ -84,7 +84,7 @@ exports.getProject = async (req, res, next) => {
 
         if (!project) return res.status(404).json({ success: false, message: 'Not found' });
 
-        const isOwner = req.user && (req.user.organizationId || req.user._id).toString() === project.postedBy._id.toString();
+        const isOwner = req.user && project.postedBy && (req.user.organizationId || req.user._id).toString() === project.postedBy._id.toString();
         const isAdmin = req.user && req.user.role === 'super_admin';
 
         let safeData = project.toObject();
@@ -184,7 +184,7 @@ exports.getMyProjects = async (req, res, next) => {
         const userId = req.user.organizationId || req.user._id;
         const role = req.user.role;
         let query = {};
-        
+
         if (['company_admin', 'university_admin'].includes(role)) {
             query = { postedBy: userId };
         } else if (role === 'student') {

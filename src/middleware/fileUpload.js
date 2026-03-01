@@ -33,13 +33,18 @@ const streamUpload = (req, res, next) => {
         req.body[fieldname] = val;
     });
 
-    busboy.on('file', (fieldname, file, info) => {
+    busboy.on('file', (fieldname, file, filename, encoding, mimeType) => {
         if (fieldname !== 'file') {
             file.resume();
             return;
         }
 
-        const { filename, encoding, mimeType } = info;
+        // Guard: skip if no filename provided (empty file input)
+        if (!filename) {
+            file.resume();
+            return;
+        }
+
         const safeFilename = filename.replace(/[^a-zA-Z0-9.\-_]/g, '');
 
         req.streamedFile = {
