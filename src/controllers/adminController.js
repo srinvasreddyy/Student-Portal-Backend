@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const Company = require('../models/Company');
 const University = require('../models/University');
 const User = require('../models/User');
+const StudentProfile = require('../models/StudentProfile');
 const AuditLog = require('../models/AuditLog');
 const { sendWithRetry, templates } = require('../services/mailer');
 
@@ -37,6 +38,48 @@ exports.listApplications = async (req, res, next) => {
         const total = await Model.countDocuments(query);
 
         res.status(200).json({ success: true, count: items.length, total, data: items });
+    } catch (err) { next(err); }
+};
+
+// NEW CONTROLLER: Complete Category-wise User List
+exports.listUsersByCategory = async (req, res, next) => {
+    try {
+        const { category, q, page = 1, limit = 12 } = req.query; // category: 'student', 'company', 'university'
+        
+        let data = [];
+        let total = 0;
+        const skip = (page - 1) * limit;
+
+        if (category === 'student') {
+            const query = { role: 'student' };
+            if (q) query.email = new RegExp(q, 'i');
+            
+            const users = await User.find(query).select('-passwordHash -refreshTokens').sort('-createdAt').skip(skip).limit(parseInt(limit)).lean();
+            total = await User.countDocuments(query);
+            
+            // Attach profiles
+            for (let user of users) {
+                user.studentProfile = await StudentProfile.findOne({ userRef: user._id }).lean();
+            }
+            data = users;
+        } else {
+            let Model = category === 'university' ? University : Company;
+            const query = {};
+            if (q) query.$or = [{ 'officialName': new RegExp(q, 'i') }, { 'name': new RegExp(q, 'i') }, { 'companyEmail': new RegExp(q, 'i') }];
+            
+            data = await Model.find(query).select('-verification').sort('-createdAt').skip(skip).limit(parseInt(limit)).lean();
+            total = await Model.countDocuments(query);
+            
+            // Link back to user login info
+            for(let org of data) {
+                if (org.representative?.user) {
+                   const loginInfo = await User.findById(org.representative.user).select('email status role').lean();
+                   org.systemAccount = loginInfo;
+                }
+            }
+        }
+
+        res.status(200).json({ success: true, total, data });
     } catch (err) { next(err); }
 };
 
@@ -91,9 +134,6 @@ exports.approveApplication = async (req, res, next) => {
             return res.status(400).json({ success: false, message: 'Application is already verified' });
         }
 
-        // ==========================================
-        // NEW LOGIC: Verify all related flags across models
-        // ==========================================
         appModel.status = 'verified';
         appModel.verified = true; // For legacy structure compatibility
         appModel.isVerified = true; // Sets the flag used by Admin Schemas

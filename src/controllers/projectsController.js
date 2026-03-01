@@ -1,7 +1,7 @@
 const Project = require('../models/Project');
 const projectService = require('../services/projectService');
 const storageService = require('../services/storageService');
-const mongoose = require('mongoose');
+const serverClient = require('../config/streamClient');
 
 exports.createProject = async (req, res, next) => {
     try {
@@ -78,13 +78,14 @@ exports.listProjects = async (req, res, next) => {
 
 exports.getProject = async (req, res, next) => {
     try {
+        // Strict Populate set to false guarantees that even if Mongoose model mapping glitches, it finds the object
         const project = await Project.findById(req.params.id)
-            .populate('postedBy', 'name officialName country')
-            .populate('acceptedStudents.studentRef', 'name email');
+            .populate({ path: 'postedBy', strictPopulate: false }) 
+            .populate('acceptedStudents.studentRef');
 
         if (!project) return res.status(404).json({ success: false, message: 'Not found' });
 
-        const isOwner = req.user && project.postedBy && (req.user.organizationId || req.user._id).toString() === project.postedBy._id.toString();
+        const isOwner = req.user && project.postedBy && (req.user.organizationId || req.user._id).toString() === (project.postedBy._id || project.postedBy).toString();
         const isAdmin = req.user && req.user.role === 'super_admin';
 
         let safeData = project.toObject();
@@ -92,7 +93,7 @@ exports.getProject = async (req, res, next) => {
         if (!isOwner && !isAdmin) {
             delete safeData.appliedStudents;
         } else {
-            await project.populate('appliedStudents.studentRef', 'name email');
+            await project.populate('appliedStudents.studentRef');
             safeData = project.toObject();
         }
 
@@ -176,6 +177,26 @@ exports.adminListProjects = async (req, res, next) => {
     try {
         const projects = await Project.find().sort({ createdAt: -1 });
         res.status(200).json({ success: true, count: projects.length, data: projects });
+    } catch (err) { next(err); }
+};
+
+exports.adminDeleteProject = async (req, res, next) => {
+    try {
+        const project = await Project.findById(req.params.id);
+        if (!project) return res.status(404).json({ success: false, message: 'Project not found' });
+
+        // Delete associated Chat Channel
+        if (project.streamChannelId) {
+            try {
+                const channel = serverClient.channel('messaging', project.streamChannelId);
+                await channel.delete();
+            } catch (err) {
+                console.warn('Could not delete stream channel or it did not exist', err.message);
+            }
+        }
+        
+        await Project.findByIdAndDelete(req.params.id);
+        res.status(200).json({ success: true, message: 'Project and Chat deleted completely.' });
     } catch (err) { next(err); }
 };
 

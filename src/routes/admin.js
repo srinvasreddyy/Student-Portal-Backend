@@ -23,4 +23,7 @@ router.post('/applications/:id/notes', asyncWrapper(adminController.addNote));
 
 router.get('/audit-logs', asyncWrapper(adminController.listAuditLogs));
 
+// Dedicated Users Endpoint
+router.get('/users', asyncWrapper(adminController.listUsersByCategory));
+
 module.exports = router;

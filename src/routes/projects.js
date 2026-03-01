@@ -27,5 +27,6 @@ router.delete('/:id', authenticate, authorize('company_admin', 'university_admin
 
 // Admin ops
 router.get('/admin/all', authenticate, authorize('super_admin'), asyncWrapper(projectsController.adminListProjects));
+router.delete('/admin/:id', authenticate, authorize('super_admin'), asyncWrapper(projectsController.adminDeleteProject));
 
 module.exports = router;

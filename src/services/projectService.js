@@ -27,13 +27,33 @@ exports.createProject = async (authorId, authorType, payload) => {
         status: 'open'
     });
 
-    // Create Stream.io Chat Room
+    // Create Stream.io Chat Room & Register Users
     const channelId = `project-${project._id.toString()}`;
     try {
+        const superAdmin = await User.findOne({ role: 'super_admin' });
+        const authorUser = await User.findById(authorId) || await mongoose.model(project.postedByModel).findById(authorId);
+        
+        const usersToUpsert = [];
+        // Upsert Author
+        if (authorUser) {
+            usersToUpsert.push({ id: authorId.toString(), role: 'admin', name: authorUser.name || authorUser.officialName || authorUser.email || 'Project Admin' });
+        } else {
+            usersToUpsert.push({ id: authorId.toString(), role: 'admin', name: 'Organization Admin' });
+        }
+        // Upsert Super Admin
+        if (superAdmin) {
+            usersToUpsert.push({ id: superAdmin._id.toString(), role: 'admin', name: 'Super Admin' });
+        }
+
+        // Register them in stream to ensure they show up in chat
+        await serverClient.upsertUsers(usersToUpsert);
+
+        const members = usersToUpsert.map(u => u.id);
+
         const channel = serverClient.channel('messaging', channelId, {
             name: payload.title,
             created_by_id: authorId.toString(),
-            members: [authorId.toString()]
+            members: members // Contains strictly Admin and Super Admin
         });
         await channel.create();
         project.streamChannelId = channelId;
@@ -101,37 +121,31 @@ exports.acceptStudent = async (projectId, studentId, authorId) => {
         const studentProfile = await StudentProfile.findOne({ userRef: studentId }).session(session).exec();
         if (studentProfile && studentProfile.status === 'engaged') throw Object.assign(new Error('student_already_engaged'), { status: 400 });
 
-        // Add to accepted
         project.acceptedStudents.push({ studentRef: studentId, acceptedAt: new Date() });
-
-        // Remove from appliedStudents
         project.appliedStudents = project.appliedStudents.filter(a => a.studentRef.toString() !== studentId.toString());
 
-        // Update Project Status if full
         if (project.acceptedStudents.length === project.maxStudentsRequired) {
             project.status = 'in_progress';
         }
         await project.save({ session });
 
-        // Update student profile status
         if (studentProfile) {
             studentProfile.status = 'engaged';
             studentProfile.activeProjectRef = project._id;
             await studentProfile.save({ session });
         }
 
-        // Update User fallback just in case other logic relies on it
         await User.findByIdAndUpdate(studentId, { activeProjectRef: project._id }, { session });
 
-        // Remove student from all other pending applications across open projects
         await Project.updateMany(
             { 'appliedStudents.studentRef': studentId, _id: { $ne: project._id }, status: 'open' },
             { $pull: { appliedStudents: { studentRef: studentId } } }
         ).session(session);
 
-        // Add to Stream.io Channel
         try {
             if (project.streamChannelId) {
+                const studentUser = await User.findById(studentId);
+                await serverClient.upsertUsers([{ id: studentId.toString(), role: 'user', name: studentUser?.email || 'Student' }]);
                 const channel = serverClient.channel('messaging', project.streamChannelId);
                 await channel.addMembers([studentId.toString()]);
             }
