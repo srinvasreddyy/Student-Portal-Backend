@@ -10,6 +10,18 @@ const acceptedStudentSchema = new mongoose.Schema({
     acceptedAt: { type: Date, default: Date.now }
 }, { _id: false });
 
+const documentSchema = new mongoose.Schema({
+    tag: { type: String, required: true },
+    url: { type: String }, // For external links
+    fileId: { type: mongoose.Schema.Types.ObjectId, ref: 'fs.files' }, // For uploaded GridFS files
+    fileName: { type: String }
+}, { _id: true });
+
+const videoSchema = new mongoose.Schema({
+    tag: { type: String, required: true },
+    url: { type: String, required: true }
+}, { _id: false });
+
 const projectSchema = new mongoose.Schema({
     postedByModel: { type: String, enum: ['Company', 'University'], required: true },
     postedBy: { type: mongoose.Schema.Types.ObjectId, required: true, refPath: 'postedByModel' },
@@ -19,6 +31,12 @@ const projectSchema = new mongoose.Schema({
     description: { type: String, required: true },
     roles: [{ type: String, required: true }],
     techStack: [{ type: String }],
+    
+    // Updated Media & Documents
+    video: videoSchema, 
+    projectDocuments: [documentSchema],
+
+    // Legacy fallback
     videoUrl: { type: String },
 
     maxStudentsRequired: { type: Number, required: true, min: 1 },
@@ -50,7 +68,6 @@ projectSchema.virtual('availableSlots').get(function () {
     return Math.max(0, this.maxStudentsRequired - this.acceptedStudents.length);
 });
 
-// Ensure virtuals are included when converting to JSON/Object
 projectSchema.set('toJSON', { virtuals: true });
 projectSchema.set('toObject', { virtuals: true });
 

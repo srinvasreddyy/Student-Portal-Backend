@@ -1,7 +1,7 @@
 const validator = require('validator');
 
 const validateProjectPayload = (req, res, next) => {
-    const { title, description, roles, maxStudents, durationWeeks } = req.body;
+    const { title, description, roles, maxStudents, durationWeeks, video, projectDocuments } = req.body;
 
     if (!title || typeof title !== 'string' || title.trim().length === 0) {
         return res.status(400).json({ success: false, message: 'Title is required' });
@@ -23,8 +23,30 @@ const validateProjectPayload = (req, res, next) => {
         return res.status(400).json({ success: false, message: 'invalid_duration. Must be 1-4 weeks' });
     }
 
-    if (req.body.videoUrl && !validator.isURL(req.body.videoUrl)) {
-        return res.status(400).json({ success: false, message: 'Invalid videoUrl' });
+    if (video) {
+        if (!video.tag || !video.url) {
+            return res.status(400).json({ success: false, message: 'Video must contain a tag and a url' });
+        }
+        if (!validator.isURL(video.url)) {
+            return res.status(400).json({ success: false, message: 'Invalid video URL format' });
+        }
+    }
+
+    if (projectDocuments !== undefined) {
+        if (!Array.isArray(projectDocuments)) {
+            return res.status(400).json({ success: false, message: 'projectDocuments must be an array' });
+        }
+        for (let doc of projectDocuments) {
+            if (!doc.tag) {
+                return res.status(400).json({ success: false, message: 'Each document must have a tag (title)' });
+            }
+            if (doc.url && !validator.isURL(doc.url)) {
+                return res.status(400).json({ success: false, message: `Invalid URL for document: ${doc.tag}` });
+            }
+            if (!doc.url && !doc.fileId) {
+                return res.status(400).json({ success: false, message: `Document '${doc.tag}' must contain either a url or file upload` });
+            }
+        }
     }
 
     next();

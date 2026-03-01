@@ -2,7 +2,6 @@ const User = require('../models/User');
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const mailer = require('../services/mailer');
-const config = require('../config');
 const TokenUtils = require('../utils/tokenUtils');
 const BruteForceProtector = require('../middleware/bruteForceProtector');
 const serverClient = require('../config/streamClient');
@@ -31,21 +30,20 @@ exports.register = async (req, res, next) => {
         });
 
         if (role === 'student') {
-            newUser.status = 'active'; // Instructed by spec
+            newUser.status = 'active'; 
         } else {
+            // Ensure newly registered admins start as pending and require Super Admin approval
             newUser.status = 'pending';
-            // Store representative / org links into profile for pending admins
+            
             if (representative) newUser.profile.representative = representative;
             if (companyCandidate) newUser.profile.companyCandidate = companyCandidate;
         }
 
-        // Email Verify setup logic
         const verifyCode = generateCode();
         newUser.emailVerifyHash = await bcrypt.hash(verifyCode, 10);
 
         await newUser.save();
 
-        // Send generic email verify
         try {
             await mailer.sendEmail(
                 newUser.email,
@@ -53,7 +51,6 @@ exports.register = async (req, res, next) => {
                 `<p>Your code is: <strong>${verifyCode}</strong></p>`
             );
         } catch (e) {
-            // Log, but user is registered
             req.app.locals.logger?.error(`Registration verification email failed ${e.message}`);
         }
 
@@ -71,13 +68,11 @@ exports.login = async (req, res, next) => {
     try {
         const { email, password } = req.body;
 
-        // Sanitize: reject non-string email (NoSQL injection prevention)
         if (!email || typeof email !== 'string') {
             return res.status(400).json({ success: false, message: 'Invalid email format' });
         }
 
         const normalizedEmail = email.toLowerCase();
-
         const user = await User.findOne({ email: normalizedEmail });
 
         if (!user) {
@@ -86,7 +81,17 @@ exports.login = async (req, res, next) => {
         }
 
         if (user.status === 'rejected') {
-            return res.status(401).json({ success: false, message: 'Account registration was rejected' });
+            return res.status(401).json({ success: false, message: 'Account registration was rejected by Super Admin' });
+        }
+
+        // ==========================================
+        // NEW LOGIC: Block unapproved Admins directly at Login
+        // ==========================================
+        if (['company_admin', 'university_admin'].includes(user.role)) {
+            if (user.status === 'pending' || user.status === 'on_hold') {
+                await BruteForceProtector.recordFailure(normalizedEmail);
+                return res.status(403).json({ success: false, message: 'Contact super admin for approval' });
+            }
         }
 
         const isMatch = await user.comparePassword(password);
@@ -100,7 +105,6 @@ exports.login = async (req, res, next) => {
         const accessToken = TokenUtils.generateAccessToken(user);
         const refreshToken = await TokenUtils.generateRefreshToken(user);
 
-        // Initialize Stream User and Token
         let streamToken = null;
         try {
             await serverClient.upsertUser({
@@ -130,7 +134,6 @@ exports.refreshToken = async (req, res, next) => {
             const newTokens = await TokenUtils.rotateRefreshToken(refreshToken, req.ip);
             res.status(200).json({ success: true, tokens: newTokens });
         } catch (error) {
-            // Usually returns Token Compromised, Invalid, or Expired
             return res.status(401).json({ success: false, message: error.message || 'Invalid refresh token' });
         }
     } catch (err) {
@@ -158,7 +161,6 @@ exports.logout = async (req, res, next) => {
 exports.verifyEmail = async (req, res, next) => {
     try {
         const { code } = req.body;
-        // req.user was set by authenticate middleware
         const user = await User.findById(req.user.id);
 
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
@@ -184,13 +186,12 @@ exports.forgotPassword = async (req, res, next) => {
         const { email } = req.body;
         const user = await User.findOne({ email: email?.toLowerCase() });
         if (!user) {
-            // Return ok to prevent enumeration
             return res.status(200).json({ success: true, message: 'If account exists, email sent.' });
         }
 
         const code = generateCode();
         user.resetPasswordHash = await bcrypt.hash(code, 10);
-        user.resetPasswordExpiry = new Date(Date.now() + 15 * 60 * 1000); // 15 mins expiry
+        user.resetPasswordExpiry = new Date(Date.now() + 15 * 60 * 1000); 
         await user.save();
 
         await mailer.sendEmail(
@@ -219,12 +220,11 @@ exports.resetPassword = async (req, res, next) => {
             return res.status(400).json({ success: false, message: 'Invalid code' });
         }
 
-        user.passwordHash = newPassword; // Will be hashed via pre-save hook
+        user.passwordHash = newPassword; 
         user.resetPasswordHash = undefined;
         user.resetPasswordExpiry = undefined;
         await user.save();
 
-        // Also revoke all refresh tokens on password change
         await TokenUtils.revokeAllUserTokens(user._id);
 
         res.status(200).json({ success: true, message: 'Password updated successfully' });

@@ -4,6 +4,11 @@ const projectsController = require('../controllers/projectsController');
 const asyncWrapper = require('../middleware/asyncWrapper');
 const { authenticate, authorize } = require('../middleware/authMiddleware');
 const validateProjectPayload = require('../middleware/validateProjectPayload');
+const streamUpload = require('../middleware/fileUpload');
+
+// File Upload / Download Routes
+router.post('/upload', authenticate, authorize('company_admin', 'university_admin'), streamUpload, asyncWrapper(projectsController.uploadDocument));
+router.get('/document/:fileId', authenticate, asyncWrapper(projectsController.downloadDocument));
 
 // Public / Authenticated Student endpoints
 router.get('/', authenticate, asyncWrapper(projectsController.listProjects));

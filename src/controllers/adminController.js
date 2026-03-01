@@ -14,7 +14,7 @@ async function getTarget(id, type) {
 exports.listApplications = async (req, res, next) => {
     try {
         const { type, status, q, page = 1, limit = 10, sort = '-createdAt' } = req.query;
-        let Model = Company; // default
+        let Model = Company; 
         if (type === 'university') Model = University;
 
         const query = {};
@@ -52,14 +52,12 @@ exports.getApplication = async (req, res, next) => {
         const model = await getTarget(id, type);
         if (!model) return res.status(404).json({ success: false, message: 'Not found' });
 
-        // Safely strip secrets manually or rely on select (doing manually to preserve nested objects)
         const safeModel = model.toObject();
         if (safeModel.verification) {
             delete safeModel.verification.emailTokenHash;
             delete safeModel.verification.tokenExpiry;
         }
 
-        // Fetch recent logs separately since we normalized
         const recentLogs = await AuditLog.find({ targetId: id, targetType: type })
             .sort({ createdAt: -1 })
             .limit(20);
@@ -83,9 +81,9 @@ exports.approveApplication = async (req, res, next) => {
         const appModel = await getTarget(id, type);
         if (!appModel) return res.status(404).json({ success: false, message: 'Not found' });
 
-        if (appModel.status === 'verified') {
+        // Ensure we check all relevant flags
+        if (appModel.status === 'verified' || appModel.isVerified === true) {
             await session.abortTransaction();
-            // Still log they tried
             await AuditLog.create([{
                 actorEmail: req.user.email, actorRole: req.user.role, targetType: type, targetId: id,
                 actionType: 'approve', details: { reason: 'Attempted to approve already verified app', failed: true }
@@ -93,30 +91,38 @@ exports.approveApplication = async (req, res, next) => {
             return res.status(400).json({ success: false, message: 'Application is already verified' });
         }
 
-        // Apply transition
+        // ==========================================
+        // NEW LOGIC: Verify all related flags across models
+        // ==========================================
         appModel.status = 'verified';
-        if (type === 'university') appModel.verified = true;
+        appModel.verified = true; // For legacy structure compatibility
+        appModel.isVerified = true; // Sets the flag used by Admin Schemas
+        appModel.verificationMethod = 'manual'; // Approved by Super Admin explicitly
 
-        // Activate associated User account
+        // Activate associated User account to enable their login
+        let userWasActivated = false;
         if (appModel.representative && appModel.representative.user) {
             const associatedUser = await User.findById(appModel.representative.user);
             if (associatedUser) {
-                associatedUser.status = 'active';
+                associatedUser.status = 'active'; // This opens the login gate
                 await associatedUser.save({ session });
+                userWasActivated = true;
             }
-        } else {
-            // Fallback: Try matching by email
+        } 
+        
+        // Fallback: Try matching by email
+        if (!userWasActivated) {
             const emailToMatch = type === 'company' ? appModel.companyEmail : appModel.representative?.email;
             if (emailToMatch) {
                 const associatedUser = await User.findOne({ email: emailToMatch.toLowerCase() });
                 if (associatedUser) {
-                    associatedUser.status = 'active';
+                    associatedUser.status = 'active'; // This opens the login gate
                     await associatedUser.save({ session });
                 }
             }
         }
 
-        // Create log & link it
+        // Log the approval
         const [logEntry] = await AuditLog.create([{
             actorEmail: req.user.email,
             actorRef: req.user._id,
@@ -132,13 +138,10 @@ exports.approveApplication = async (req, res, next) => {
         appModel.auditLogs.push(logEntry._id);
         await appModel.save({ session });
 
-        // Hold commit until email queue row is generated
-
-        // Send Email OUTSIDE transaction so we don't hold the lock if SMTP is slow
         let emailAttemptId = null;
         if (notify) {
             const emailAddress = type === 'company' ? appModel.companyEmail : appModel.representative?.email;
-            const decisionKey = `approve_${appModel._id}_v1`; // basic idempotency 
+            const decisionKey = `approve_${appModel._id}_v1`; 
 
             if (emailAddress) {
                 const result = await sendWithRetry({
@@ -157,7 +160,7 @@ exports.approveApplication = async (req, res, next) => {
         await session.commitTransaction();
         session.endSession();
 
-        res.status(200).json({ success: true, status: appModel.status, auditLogId: logEntry._id, emailAttemptId });
+        res.status(200).json({ success: true, status: appModel.status, isVerified: appModel.isVerified, auditLogId: logEntry._id, emailAttemptId });
     } catch (err) {
         if (session.inTransaction()) {
             await session.abortTransaction();
@@ -195,7 +198,7 @@ exports.holdApplication = async (req, res, next) => {
                     applicationId: appModel._id, targetType: type, to: emailAddress,
                     subject: 'Application Needs Attention', templateName: 'hold',
                     htmlContent: templates.hold(reason) + (expectedAction ? `<p><strong>Required Action:</strong> ${expectedAction}</p>` : ''),
-                    sendKey: `hold_${appModel._id}_${Date.now()}` // Allow multiple holds over time
+                    sendKey: `hold_${appModel._id}_${Date.now()}` 
                 });
             }
         }
@@ -268,7 +271,7 @@ exports.addNote = async (req, res, next) => {
 exports.resendDecisionEmail = async (req, res, next) => {
     try {
         const { id } = req.params;
-        const { actionType, force, type, reason } = req.body;  // Action type is 'approve', 'hold', 'reject'
+        const { actionType, force, type, reason } = req.body;  
 
         const appModel = await getTarget(id, type);
         const emailAddress = type === 'company' ? appModel.companyEmail : appModel.representative?.email;
@@ -291,7 +294,6 @@ exports.resendDecisionEmail = async (req, res, next) => {
             return res.status(400).json({ success: false, message: 'Invalid actionType to resend' });
         }
 
-        // We use a new sendkey bypass or use force
         const decisionKey = force ? `resend_${actionType}_${appModel._id}_${Date.now()}` : `${actionType}_${appModel._id}_v1`;
 
         const result = await sendWithRetry({
