@@ -6,10 +6,13 @@ const Company = require('../models/Company');
 const UniversityAdmin = require('../models/UniversityAdmin');
 const University = require('../models/University');
 const { lookupCompaniesHouse, lookupOpenCorporates } = require('../services/companyLookupService');
-// We need a university lookup service, which we will stub/implement using HipoLabs as per requirements
 const { getUniversitiesByCountry, getGlobalUniversities } = require('../services/universityLookupService');
 const { verifyDomainAndEmail, getBaseDomain } = require('../middleware/domainVerifier');
+const mailer = require('../services/mailer'); // IMPORTED MAILER
 const logger = require('../utils/logger');
+
+// Generate numeric code helper
+const generateCode = () => Math.floor(100000 + Math.random() * 900000).toString();
 
 // Generic error response formatter
 const sendError = (res, statusCode, message, errorCode) => {
@@ -41,7 +44,6 @@ exports.searchUkCompany = async (req, res) => {
         const { companyNumber } = req.body;
         const chData = await lookupCompaniesHouse(companyNumber);
 
-        // Match exact response structure requirement
         return sendSuccess(res, {
             companyName: chData.company_name,
             status: chData.company_status,
@@ -51,7 +53,6 @@ exports.searchUkCompany = async (req, res) => {
 
     } catch (error) {
         logger.error(`UK Company Search Error: ${error.message}`);
-        // Handle 404 (Not Found) distinctly from API failures
         if (error.response && error.response.status === 404) {
             return sendError(res, 404, 'Company not found', 'COMPANY_NOT_FOUND');
         }
@@ -61,16 +62,13 @@ exports.searchUkCompany = async (req, res) => {
 
 exports.getGlobalCompanies = async (req, res) => {
     try {
-        // OpenCorporates API requires a search query usually. If we want a generic list, we might need a general query or a cached list.
-        // Assuming the frontend will pass a 'q' query parameter to search as user types for the dropdown list
         const query = req.query.q || '';
         if (query.length < 2) {
             return sendSuccess(res, []);
         }
 
-        const data = await lookupOpenCorporates(query, 'us'); // Fallback jurisdiction mapping can be enhanced
+        const data = await lookupOpenCorporates(query, 'us');
 
-        // We ensure we only send a structured list back
         let companyList = [];
         if (data && Array.isArray(data)) {
             companyList = data.map(item => ({
@@ -101,7 +99,12 @@ exports.verifyCompanyDomain = async (req, res) => {
             return sendError(res, 400, result.message, result.errorCode);
         }
 
-        return sendSuccess(res, { verified: true });
+        return sendSuccess(res, { 
+            verified: result.data ? result.data.verified : false,
+            needsDomainManualVerification: result.needsDomainManualVerification || false,
+            requiresManualVerification: true,
+            message: result.message || 'Verification complete'
+        });
     } catch (error) {
         logger.error(`Domain verification error: ${error.message}`);
         return sendError(res, 500, 'Failed to verify domain', 'SERVER_ERROR');
@@ -117,8 +120,11 @@ exports.registerCompany = async (req, res) => {
     const session = await mongoose.startSession();
     session.startTransaction();
 
+    let generatedVerifyCode = null; // Store for mailer after transaction success
+
     try {
-        const { organizationName, country, website, officialEmail, phone, representativeName, password, numberOfEmployees, industry, fullAddress } = req.body;
+        const { organizationName, country, website, officialEmail, phone, repName, representativeName, password, numberOfEmployees, industry, fullAddress } = req.body;
+        const finalRepName = repName || representativeName;
 
         // 1. Re-verify Domain (Never trust frontend)
         const verifyResult = await verifyDomainAndEmail(website, officialEmail);
@@ -126,6 +132,8 @@ exports.registerCompany = async (req, res) => {
             await session.abortTransaction();
             return sendError(res, 400, verifyResult.message, verifyResult.errorCode);
         }
+
+        const needsDomainManualVerification = verifyResult.needsDomainManualVerification || false;
 
         // 2. Check for exact duplicates
         const normalizedEmail = officialEmail.toLowerCase().trim();
@@ -141,16 +149,21 @@ exports.registerCompany = async (req, res) => {
             return sendError(res, 409, 'This organization is already registered in this country.', 'DUPLICATE_ORGANIZATION');
         }
 
-        // 3. Create the User (Company Admin)
+        // 3. Generate OTP and Hash it
+        generatedVerifyCode = generateCode();
+        const emailVerifyHash = await bcrypt.hash(generatedVerifyCode, 10);
+
+        // 4. Create the User (Company Admin)
         const newUser = new User({
             email: normalizedEmail,
             passwordHash: password, // Pre-save hook will hash it
             role: 'company_admin',
             status: 'pending',
-            profile: { representativeName, phone }
+            profile: { representativeName: finalRepName, phone },
+            emailVerifyHash // Store the hash so auth verification works
         });
 
-        // 4. Create the Company Entity
+        // 5. Create the Company Entity
         const websiteDomain = getBaseDomain(website);
         const newCompany = new Company({
             officialName: organizationName,
@@ -163,11 +176,13 @@ exports.registerCompany = async (req, res) => {
             fullAddress,
             representative: {
                 user: newUser._id,
-                name: representativeName
+                name: finalRepName
             },
             status: 'pending',
             verification: {
-                emailVerified: true // Trusting the internal domain check flow for now
+                emailVerified: !needsDomainManualVerification, 
+                requiresManualVerification: true, 
+                needsDomainManualVerification: needsDomainManualVerification 
             }
         });
 
@@ -175,13 +190,26 @@ exports.registerCompany = async (req, res) => {
         await newCompany.save({ session });
         await session.commitTransaction();
 
+        // 6. Send OTP Email safely after transaction commits
+        try {
+            await mailer.sendEmail(
+                newUser.email,
+                'Verify your Company Portal Email',
+                `<div style="font-family: sans-serif; text-align: center;">
+                    <h2>Company Verification</h2>
+                    <p>Your email verification code is:</p>
+                    <h1 style="letter-spacing: 4px; color: #4F46E5;">${generatedVerifyCode}</h1>
+                </div>`
+            );
+        } catch (e) {
+            logger.error(`Registration OTP email failed to send: ${e.message}`);
+        }
+
         return sendSuccess(res, { adminId: newUser._id, organizationName: newCompany.officialName });
 
     } catch (error) {
         await session.abortTransaction();
-        console.error('REGISTRATION ERROR:', error);
         logger.error(`Company Registration Error: ${error.message}`);
-        // Send safe errors, prevent NoSQL injection trace leaks
         if (error.message.includes('Public email domains') || error.message.includes('does not match')) {
             return sendError(res, 400, error.message, 'DOMAIN_CHECK_FAILED');
         }
@@ -207,7 +235,6 @@ exports.searchUkUniversities = async (req, res) => {
 
 exports.getGlobalUniversities = async (req, res) => {
     try {
-        // HipoLabs API lets us query by name
         const query = req.query.q || '';
         const list = await getGlobalUniversities(query);
         return sendSuccess(res, list);
@@ -217,7 +244,7 @@ exports.getGlobalUniversities = async (req, res) => {
     }
 };
 
-exports.verifyUniversityDomain = exports.verifyCompanyDomain; // Same logic exactly
+exports.verifyUniversityDomain = exports.verifyCompanyDomain; 
 
 exports.registerUniversity = async (req, res) => {
     const errors = validationResult(req);
@@ -228,8 +255,11 @@ exports.registerUniversity = async (req, res) => {
     const session = await mongoose.startSession();
     session.startTransaction();
 
+    let generatedVerifyCode = null;
+
     try {
-        const { organizationName, country, website, officialEmail, phone, representativeName, repRole, repDob, repLocation, repEmail, password } = req.body;
+        const { organizationName, country, website, officialEmail, phone, repName, representativeName, repRole, repDob, repLocation, password } = req.body;
+        const finalRepName = repName || representativeName;
 
         // 1. Re-verify Domain
         const verifyResult = await verifyDomainAndEmail(website, officialEmail);
@@ -238,9 +268,11 @@ exports.registerUniversity = async (req, res) => {
             return sendError(res, 400, verifyResult.message, verifyResult.errorCode);
         }
 
+        const needsDomainManualVerification = verifyResult.needsDomainManualVerification || false;
+        const normalizedEmail = officialEmail.toLowerCase().trim();
+
         // 2. Check for duplicates
-        const normalizedRepEmail = (repEmail || officialEmail).toLowerCase().trim();
-        const existingEmail = await User.findOne({ email: normalizedRepEmail }).session(session);
+        const existingEmail = await User.findOne({ email: normalizedEmail }).session(session);
         if (existingEmail) {
             await session.abortTransaction();
             return sendError(res, 409, 'Email is already registered.', 'DUPLICATE_EMAIL');
@@ -252,16 +284,21 @@ exports.registerUniversity = async (req, res) => {
             return sendError(res, 409, 'This university is already registered in this country.', 'DUPLICATE_ORGANIZATION');
         }
 
-        // 3. Create the User (University Admin)
+        // 3. Generate OTP and Hash it
+        generatedVerifyCode = generateCode();
+        const emailVerifyHash = await bcrypt.hash(generatedVerifyCode, 10);
+
+        // 4. Create the User (University Admin)
         const newUser = new User({
-            email: normalizedRepEmail,
-            passwordHash: password, // Pre-save hook will hash it
+            email: normalizedEmail,
+            passwordHash: password, 
             role: 'university_admin',
             status: 'pending',
-            profile: { representativeName, phone }
+            profile: { representativeName: finalRepName, phone },
+            emailVerifyHash // Store the hash so auth verification works
         });
 
-        // 4. Create the University Entity
+        // 5. Create the University Entity
         const websiteDomain = getBaseDomain(website);
         const newUni = new University({
             name: organizationName,
@@ -270,21 +307,38 @@ exports.registerUniversity = async (req, res) => {
             domains: websiteDomain ? [websiteDomain] : [],
             representative: {
                 user: newUser._id,
-                name: representativeName,
+                name: finalRepName,
                 role: repRole,
                 dob: repDob,
                 location: repLocation,
-                email: normalizedRepEmail
+                email: normalizedEmail 
             },
             status: 'pending',
             verification: {
-                emailVerified: true // Trusting the internal domain check flow for now
+                emailVerified: !needsDomainManualVerification, 
+                requiresManualVerification: true, 
+                needsDomainManualVerification: needsDomainManualVerification 
             }
         });
 
         await newUser.save({ session });
         await newUni.save({ session });
         await session.commitTransaction();
+
+        // 6. Send OTP Email safely after transaction commits
+        try {
+            await mailer.sendEmail(
+                newUser.email,
+                'Verify your University Portal Email',
+                `<div style="font-family: sans-serif; text-align: center;">
+                    <h2>University Verification</h2>
+                    <p>Your email verification code is:</p>
+                    <h1 style="letter-spacing: 4px; color: #4F46E5;">${generatedVerifyCode}</h1>
+                </div>`
+            );
+        } catch (e) {
+            logger.error(`Registration OTP email failed to send: ${e.message}`);
+        }
 
         return sendSuccess(res, { adminId: newUser._id, organizationName: newUni.name });
 

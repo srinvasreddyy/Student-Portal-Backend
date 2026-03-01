@@ -3,6 +3,8 @@ const AuditLog = require('./AuditLog');
 
 const verificationSchema = new mongoose.Schema({
     emailVerified: { type: Boolean, default: false },
+    requiresManualVerification: { type: Boolean, default: true }, // CHANGED: ALL admins require manual verification by default
+    needsDomainManualVerification: { type: Boolean, default: false }, // ADDED: Specific flag for domain mismatches
     emailTokenHash: { type: String },
     tokenExpiry: { type: Date },
     domainCheckedAt: { type: Date },
@@ -26,7 +28,7 @@ const universitySchema = new mongoose.Schema(
             role: { type: String },
             dob: { type: Date },
             location: { type: String },
-            email: { type: String },
+            email: { type: String }, // Will now be strictly synced with User login email
         },
         status: {
             type: String,

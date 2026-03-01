@@ -3,6 +3,8 @@ const AuditLog = require('./AuditLog');
 
 const verificationSchema = new mongoose.Schema({
     emailVerified: { type: Boolean, default: false },
+    requiresManualVerification: { type: Boolean, default: true }, // CHANGED: ALL admins require manual verification by default
+    needsDomainManualVerification: { type: Boolean, default: false }, // ADDED: Specific flag for domain mismatches
     emailTokenHash: { type: String },
     tokenExpiry: { type: Date },
     domainCheckedAt: { type: Date },
@@ -31,7 +33,7 @@ const companySchema = new mongoose.Schema(
             dob: { type: Date },
             location: { type: String },
         },
-        companyEmail: { type: String },
+        companyEmail: { type: String }, // Ensures login email and company email are uniform
         status: {
             type: String,
             enum: ['pending', 'verified', 'on_hold', 'rejected'],

@@ -14,14 +14,15 @@ const verifyDomainValidation = [
     body('email').trim().notEmpty().isEmail().withMessage('Valid email is required')
 ];
 
+// FIXED: Changed `representativeName` to `repName` to match the frontend payload
 const companyRegistrationValidation = [
-    body('organizationName').trim().notEmpty(),
-    body('country').trim().notEmpty(),
-    body('website').trim().isURL(),
-    body('officialEmail').trim().isEmail(),
-    body('phone').trim().notEmpty(),
-    body('representativeName').trim().notEmpty(),
-    body('password').isLength({ min: 6 })
+    body('organizationName').trim().notEmpty().withMessage('Organization Name is required'),
+    body('country').trim().notEmpty().withMessage('Country is required'),
+    body('website').trim().isURL().withMessage('Valid website URL is required'),
+    body('officialEmail').trim().isEmail().withMessage('Valid Official Email is required'),
+    body('phone').trim().notEmpty().withMessage('Phone is required'),
+    body('repName').trim().notEmpty().withMessage('Representative Name is required'),
+    body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters')
 ];
 
 // --- COMPANY REGISTRATION ROUTES ---

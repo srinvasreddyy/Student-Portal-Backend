@@ -77,10 +77,18 @@ async function verifyDomainAndEmail(websiteUrl, email) {
     // 2. Validate Domain Match (Email must be same base domain as website)
     const domainMatch = websiteDomain === emailBaseDomain;
 
-    // Prevent subdomain spoofing checks (e.g. user@admin.harvard.edu vs harvard.edu is okay since base domain matches)
-    // If they don't match base domains, we reject.
+    // CHANGED: Instead of a hard fail, flag specifically for domain manual verification
     if (!domainMatch) {
-        return { success: false, message: 'Email domain does not match the official website domain.', errorCode: 'DOMAIN_MISMATCH' };
+        return { 
+            success: true, // Allow it to proceed
+            needsDomainManualVerification: true, 
+            message: 'Email domain does not match the official website domain. Manual domain verification required by Super Admin.', 
+            data: {
+                websiteDomain,
+                emailDomain: rawEmailDomain,
+                verified: false
+            }
+        };
     }
 
     // 3. MX Record Check
@@ -91,6 +99,7 @@ async function verifyDomainAndEmail(websiteUrl, email) {
 
     return {
         success: true,
+        needsDomainManualVerification: false,
         data: {
             websiteDomain,
             emailDomain: rawEmailDomain,
