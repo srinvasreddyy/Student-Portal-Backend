@@ -79,13 +79,22 @@ exports.listProjects = async (req, res, next) => {
 exports.getProject = async (req, res, next) => {
     try {
         const project = await Project.findById(req.params.id)
-            .populate({ path: 'postedBy', strictPopulate: false }) 
             .populate('acceptedStudents.studentRef');
 
         if (!project) return res.status(404).json({ success: false, message: 'Not found' });
 
-        const isOwner = req.user && project.postedBy && (req.user.organizationId || req.user._id).toString() === (project.postedBy._id || project.postedBy).toString();
+        const orgIdStr = req.user?.organizationId?.toString();
+        const userIdStr = req.user?._id?.toString();
+        const postedByIdStr = project.postedBy?.toString();
+
+        const isOwner = req.user && (
+            postedByIdStr === orgIdStr ||
+            postedByIdStr === userIdStr
+        );
         const isAdmin = req.user && req.user.role === 'super_admin';
+
+        // Populate postedBy after ownership check
+        await project.populate({ path: 'postedBy', strictPopulate: false });
 
         let safeData = project.toObject();
 
@@ -208,7 +217,7 @@ exports.adminDeleteProject = async (req, res, next) => {
                 console.warn('Could not delete stream channel or it did not exist', err.message);
             }
         }
-        
+
         await Project.findByIdAndDelete(req.params.id);
         res.status(200).json({ success: true, message: 'Project and Chat deleted completely.' });
     } catch (err) { next(err); }

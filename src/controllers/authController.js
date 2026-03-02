@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const StudentProfile = require('../models/StudentProfile');
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const mailer = require('../services/mailer');
@@ -11,7 +12,13 @@ const generateCode = () => Math.floor(100000 + Math.random() * 900000).toString(
 
 exports.register = async (req, res, next) => {
     try {
-        const { email, password, role, profile, representative, companyCandidate } = req.body;
+        const {
+            email, password, role, profile, representative, companyCandidate,
+            // Student-specific fields
+            firstName, middleName, lastName,
+            currentAcademicStatus, institutionName, institutionWebsite,
+            course, fieldOfStudy, courseStartYear, courseEndYear
+        } = req.body;
 
         if (!['student', 'company_admin', 'university_admin'].includes(role)) {
             return res.status(400).json({ success: false, message: 'Invalid role' });
@@ -30,11 +37,49 @@ exports.register = async (req, res, next) => {
         });
 
         if (role === 'student') {
-            newUser.status = 'active'; 
+            // ── Validate at least 2 of 3 name fields ──
+            const nameFields = [firstName, middleName, lastName].filter(n => n && n.trim());
+            if (nameFields.length < 2) {
+                return res.status(400).json({ success: false, message: 'Please provide at least 2 of 3 name fields (first, middle, last).' });
+            }
+
+            newUser.firstName = firstName?.trim();
+            newUser.middleName = middleName?.trim();
+            newUser.lastName = lastName?.trim();
+            newUser.currentAcademicStatus = currentAcademicStatus;
+            newUser.institutionName = institutionName;
+            newUser.institutionWebsite = institutionWebsite;
+            newUser.course = course;
+            newUser.fieldOfStudy = fieldOfStudy;
+            newUser.courseStartYear = courseStartYear ? Number(courseStartYear) : undefined;
+            newUser.courseEndYear = courseEndYear ? Number(courseEndYear) : undefined;
+
+            // ── Domain verification ──
+            let domainVerified = false;
+            if (institutionWebsite && email) {
+                try {
+                    const emailDomain = email.toLowerCase().split('@')[1];
+                    // Strip protocol and www, extract domain
+                    let instDomain = institutionWebsite.toLowerCase()
+                        .replace(/^https?:\/\//, '')
+                        .replace(/^www\./, '')
+                        .split('/')[0]
+                        .split(':')[0]; // Remove port if any
+
+                    // Check if email domain matches or is a subdomain of institution domain
+                    if (emailDomain === instDomain || emailDomain.endsWith('.' + instDomain)) {
+                        domainVerified = true;
+                    }
+                } catch { /* domain parsing failed — leave as false */ }
+            }
+
+            newUser.domainVerified = domainVerified;
+            newUser.status = domainVerified ? 'active' : 'pending';
+            newUser.isEligibleForProjects = true;
         } else {
             // Ensure newly registered admins start as pending and require Super Admin approval
             newUser.status = 'pending';
-            
+
             if (representative) newUser.profile.representative = representative;
             if (companyCandidate) newUser.profile.companyCandidate = companyCandidate;
         }
@@ -43,6 +88,24 @@ exports.register = async (req, res, next) => {
         newUser.emailVerifyHash = await bcrypt.hash(verifyCode, 10);
 
         await newUser.save();
+
+        // ── Auto-create StudentProfile with primary education entry ──
+        if (role === 'student') {
+            const primaryEducation = {
+                institution: institutionName || 'Not specified',
+                degree: currentAcademicStatus || '',
+                field: fieldOfStudy || '',
+                startYear: courseStartYear ? Number(courseStartYear) : undefined,
+                endYear: courseEndYear ? Number(courseEndYear) : undefined,
+                isPrimary: true
+            };
+            await StudentProfile.create({
+                userRef: newUser._id,
+                education: [primaryEducation],
+                techStack: [],
+                experience: []
+            });
+        }
 
         try {
             await mailer.sendEmail(
@@ -56,8 +119,14 @@ exports.register = async (req, res, next) => {
 
         res.status(201).json({
             success: true,
-            message: 'Registration successful',
-            user: { id: newUser._id, email: newUser.email, role: newUser.role, status: newUser.status }
+            message: newUser.status === 'pending'
+                ? 'Registration successful. Your account is pending domain verification by an administrator.'
+                : 'Registration successful',
+            user: {
+                id: newUser._id, email: newUser.email, role: newUser.role,
+                status: newUser.status, domainVerified: newUser.domainVerified,
+                firstName: newUser.firstName, lastName: newUser.lastName
+            }
         });
     } catch (error) {
         next(error);
@@ -84,14 +153,23 @@ exports.login = async (req, res, next) => {
             return res.status(401).json({ success: false, message: 'Account registration was rejected by Super Admin' });
         }
 
-        // ==========================================
-        // Block unapproved Admins directly at Login
-        // ==========================================
-        if (['company_admin', 'university_admin'].includes(user.role)) {
-            if (user.status === 'pending' || user.status === 'on_hold') {
+        // ── Block unapproved accounts ──
+        if (user.status === 'pending') {
+            if (user.role === 'student') {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Your account is pending domain verification. Please wait for administrator approval.',
+                    code: 'ACCOUNT_PENDING'
+                });
+            }
+            if (['company_admin', 'university_admin'].includes(user.role)) {
                 await BruteForceProtector.recordFailure(normalizedEmail);
                 return res.status(403).json({ success: false, message: 'Contact super admin for approval' });
             }
+        }
+        if (user.status === 'on_hold' && ['company_admin', 'university_admin'].includes(user.role)) {
+            await BruteForceProtector.recordFailure(normalizedEmail);
+            return res.status(403).json({ success: false, message: 'Contact super admin for approval' });
         }
 
         const isMatch = await user.comparePassword(password);
@@ -102,16 +180,30 @@ exports.login = async (req, res, next) => {
 
         await BruteForceProtector.reset(normalizedEmail);
 
+        // ── Student eligibility check on every login ──
+        if (user.role === 'student' && user.courseEndYear) {
+            const currentYear = new Date().getFullYear();
+            const wasEligible = user.isEligibleForProjects;
+            if (currentYear > user.courseEndYear) {
+                user.isEligibleForProjects = false;
+            } else {
+                user.isEligibleForProjects = true;
+            }
+            if (user.isEligibleForProjects !== wasEligible) {
+                await user.save();
+            }
+        }
+
         const accessToken = TokenUtils.generateAccessToken(user);
         const refreshToken = await TokenUtils.generateRefreshToken(user);
 
         // STREAM CHAT INTEGRATION ON LOGIN
         let streamToken = null;
         try {
-            // Upsert user to ensure they exist in Stream before we give them a token
+            const displayName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email;
             await serverClient.upsertUser({
                 id: user._id.toString(),
-                name: user.profile?.repName || user.email, // Try to use a nice name
+                name: displayName,
                 role: user.role === 'student' ? 'user' : 'admin'
             });
             streamToken = serverClient.createToken(user._id.toString());
@@ -121,7 +213,15 @@ exports.login = async (req, res, next) => {
 
         const tokens = { accessToken, refreshToken, streamToken };
 
-        res.status(200).json({ success: true, tokens, user: { id: user._id, email: user.email, role: user.role, status: user.status } });
+        res.status(200).json({
+            success: true, tokens,
+            user: {
+                id: user._id, email: user.email, role: user.role, status: user.status,
+                firstName: user.firstName, lastName: user.lastName,
+                isEligibleForProjects: user.isEligibleForProjects,
+                domainVerified: user.domainVerified
+            }
+        });
     } catch (error) {
         next(error);
     }
@@ -193,7 +293,7 @@ exports.forgotPassword = async (req, res, next) => {
 
         const code = generateCode();
         user.resetPasswordHash = await bcrypt.hash(code, 10);
-        user.resetPasswordExpiry = new Date(Date.now() + 15 * 60 * 1000); 
+        user.resetPasswordExpiry = new Date(Date.now() + 15 * 60 * 1000);
         await user.save();
 
         await mailer.sendEmail(
@@ -222,7 +322,7 @@ exports.resetPassword = async (req, res, next) => {
             return res.status(400).json({ success: false, message: 'Invalid code' });
         }
 
-        user.passwordHash = newPassword; 
+        user.passwordHash = newPassword;
         user.resetPasswordHash = undefined;
         user.resetPasswordExpiry = undefined;
         await user.save();

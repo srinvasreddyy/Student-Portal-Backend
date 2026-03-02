@@ -26,4 +26,7 @@ router.get('/audit-logs', asyncWrapper(adminController.listAuditLogs));
 // Dedicated Users Endpoint
 router.get('/users', asyncWrapper(adminController.listUsersByCategory));
 
+// Student account management
+router.patch('/students/:id/status', asyncWrapper(adminController.updateStudentStatus));
+
 module.exports = router;

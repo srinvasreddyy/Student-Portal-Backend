@@ -15,12 +15,8 @@ const studentsRoutes = require('./routes/students');
 
 const app = express();
 
-// Security middleware
-app.use(securityHeaders());
-app.use(require('./middleware/mongoSanitizer')()); // NoSQL Injection 
-app.use(globalRateLimiter);
-
-// CORS configuration respects ALLOWED_ORIGINS (comma-separated string)
+// CORS MUST be registered before any middleware that may short-circuit (rate limiter, etc.)
+// so that error responses (429, 403, etc.) still carry the proper CORS headers.
 app.use(
     cors({
         origin: function (origin, callback) {
@@ -34,7 +30,12 @@ app.use(
     })
 );
 
-// CORS configuration respects ALLOWED_ORIGINS
+// Security middleware (after CORS)
+app.use(securityHeaders());
+app.use(require('./middleware/mongoSanitizer')()); // NoSQL Injection 
+app.use(globalRateLimiter);
+
+// Body parsers
 app.use(express.json({ limit: '100kb' }));
 
 // URL encoded body parser

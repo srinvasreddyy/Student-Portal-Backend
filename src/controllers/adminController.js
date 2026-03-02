@@ -15,7 +15,7 @@ async function getTarget(id, type) {
 exports.listApplications = async (req, res, next) => {
     try {
         const { type, status, q, page = 1, limit = 10, sort = '-createdAt' } = req.query;
-        let Model = Company; 
+        let Model = Company;
         if (type === 'university') Model = University;
 
         const query = {};
@@ -45,7 +45,7 @@ exports.listApplications = async (req, res, next) => {
 exports.listUsersByCategory = async (req, res, next) => {
     try {
         const { category, q, page = 1, limit = 12 } = req.query; // category: 'student', 'company', 'university'
-        
+
         let data = [];
         let total = 0;
         const skip = (page - 1) * limit;
@@ -53,10 +53,10 @@ exports.listUsersByCategory = async (req, res, next) => {
         if (category === 'student') {
             const query = { role: 'student' };
             if (q) query.email = new RegExp(q, 'i');
-            
+
             const users = await User.find(query).select('-passwordHash -refreshTokens').sort('-createdAt').skip(skip).limit(parseInt(limit)).lean();
             total = await User.countDocuments(query);
-            
+
             // Attach profiles
             for (let user of users) {
                 user.studentProfile = await StudentProfile.findOne({ userRef: user._id }).lean();
@@ -66,15 +66,15 @@ exports.listUsersByCategory = async (req, res, next) => {
             let Model = category === 'university' ? University : Company;
             const query = {};
             if (q) query.$or = [{ 'officialName': new RegExp(q, 'i') }, { 'name': new RegExp(q, 'i') }, { 'companyEmail': new RegExp(q, 'i') }];
-            
+
             data = await Model.find(query).select('-verification').sort('-createdAt').skip(skip).limit(parseInt(limit)).lean();
             total = await Model.countDocuments(query);
-            
+
             // Link back to user login info
-            for(let org of data) {
+            for (let org of data) {
                 if (org.representative?.user) {
-                   const loginInfo = await User.findById(org.representative.user).select('email status role').lean();
-                   org.systemAccount = loginInfo;
+                    const loginInfo = await User.findById(org.representative.user).select('email status role').lean();
+                    org.systemAccount = loginInfo;
                 }
             }
         }
@@ -148,8 +148,8 @@ exports.approveApplication = async (req, res, next) => {
                 await associatedUser.save({ session });
                 userWasActivated = true;
             }
-        } 
-        
+        }
+
         // Fallback: Try matching by email
         if (!userWasActivated) {
             const emailToMatch = type === 'company' ? appModel.companyEmail : appModel.representative?.email;
@@ -181,7 +181,7 @@ exports.approveApplication = async (req, res, next) => {
         let emailAttemptId = null;
         if (notify) {
             const emailAddress = type === 'company' ? appModel.companyEmail : appModel.representative?.email;
-            const decisionKey = `approve_${appModel._id}_v1`; 
+            const decisionKey = `approve_${appModel._id}_v1`;
 
             if (emailAddress) {
                 const result = await sendWithRetry({
@@ -238,7 +238,7 @@ exports.holdApplication = async (req, res, next) => {
                     applicationId: appModel._id, targetType: type, to: emailAddress,
                     subject: 'Application Needs Attention', templateName: 'hold',
                     htmlContent: templates.hold(reason) + (expectedAction ? `<p><strong>Required Action:</strong> ${expectedAction}</p>` : ''),
-                    sendKey: `hold_${appModel._id}_${Date.now()}` 
+                    sendKey: `hold_${appModel._id}_${Date.now()}`
                 });
             }
         }
@@ -311,7 +311,7 @@ exports.addNote = async (req, res, next) => {
 exports.resendDecisionEmail = async (req, res, next) => {
     try {
         const { id } = req.params;
-        const { actionType, force, type, reason } = req.body;  
+        const { actionType, force, type, reason } = req.body;
 
         const appModel = await getTarget(id, type);
         const emailAddress = type === 'company' ? appModel.companyEmail : appModel.representative?.email;
@@ -373,5 +373,37 @@ exports.listAuditLogs = async (req, res, next) => {
         const total = await AuditLog.countDocuments(query);
 
         res.status(200).json({ success: true, count: logs.length, total, data: logs });
+    } catch (err) { next(err); }
+};
+
+// ── Student account status management (approve / reject / suspend) ──
+exports.updateStudentStatus = async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const { status } = req.body;
+
+        if (!['active', 'suspended', 'rejected'].includes(status)) {
+            return res.status(400).json({ success: false, message: 'Status must be active, suspended, or rejected' });
+        }
+
+        const user = await User.findById(id);
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+        if (user.role !== 'student') return res.status(400).json({ success: false, message: 'This endpoint is only for student accounts' });
+
+        const previousStatus = user.status;
+        user.status = status;
+        if (status === 'active') user.domainVerified = true; // Admin-approved counts as verified
+        await user.save();
+
+        // Audit log
+        await AuditLog.create({
+            actorEmail: req.user.email, actorRef: req.user._id, actorRole: req.user.role,
+            targetType: 'student', targetId: user._id,
+            actionType: `student_${status}`,
+            details: { previousStatus, newStatus: status },
+            ip: req.ip, userAgent: req.get('User-Agent')
+        });
+
+        res.status(200).json({ success: true, message: `Student account ${status}`, data: { id: user._id, status: user.status, domainVerified: user.domainVerified } });
     } catch (err) { next(err); }
 };

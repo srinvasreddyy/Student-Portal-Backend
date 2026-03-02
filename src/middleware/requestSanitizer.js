@@ -59,7 +59,7 @@ const commonSchemas = {
             email: z.string().email().trim().toLowerCase(),
             password: z.string().min(8).regex(/[A-Z]/, 'Must contain at least one uppercase letter').regex(/[0-9]/, 'Must contain at least one number'),
             role: z.enum(['student', 'company_admin', 'university_admin']).optional()
-        }).strict()
+        }).passthrough() // Allow student-specific fields (firstName, institutionName, etc.) through
     }
 };
 

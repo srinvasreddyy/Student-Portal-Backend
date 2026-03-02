@@ -34,7 +34,21 @@ const userSchema = new mongoose.Schema({
     refreshTokens: [refreshTokenSchema],
     tokenVersion: { type: Number, default: 0 }, // Tracks mass revocations
     activeProjectRef: { type: mongoose.Schema.Types.ObjectId, ref: 'Project' },
-    portfolio: [{ type: mongoose.Schema.Types.ObjectId, ref: 'PortfolioItem' }]
+    portfolio: [{ type: mongoose.Schema.Types.ObjectId, ref: 'PortfolioItem' }],
+
+    // ── Student-specific fields ──
+    firstName: { type: String, trim: true },
+    middleName: { type: String, trim: true },
+    lastName: { type: String, trim: true },
+    currentAcademicStatus: { type: String, trim: true }, // e.g. 'Undergraduate', 'Postgraduate'
+    institutionName: { type: String, trim: true },
+    institutionWebsite: { type: String, trim: true },
+    course: { type: String, trim: true },
+    fieldOfStudy: { type: String, trim: true },
+    courseStartYear: { type: Number },
+    courseEndYear: { type: Number },
+    isEligibleForProjects: { type: Boolean, default: true },
+    domainVerified: { type: Boolean, default: false },
 }, { timestamps: true });
 
 // Hash password before saving if modified

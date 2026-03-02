@@ -8,7 +8,8 @@ const studentProfileSchema = new mongoose.Schema({
         field: String,
         startYear: Number,
         endYear: Number,
-        grade: String
+        grade: String,
+        isPrimary: { type: Boolean, default: false } // Auto-injected at registration; immutable
     }],
     techStack: [{ type: String }],
     experience: [{

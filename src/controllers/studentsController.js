@@ -18,9 +18,23 @@ exports.updateProfile = async (req, res, next) => {
     try {
         const { education, techStack, experience, bio, privacy } = req.body;
 
+        // ── Protect isPrimary education entry ──
+        const existingProfile = await StudentProfile.findOne({ userRef: req.user._id });
+        let finalEducation = education || [];
+
+        if (existingProfile) {
+            const primaryEntry = (existingProfile.education || []).find(e => e.isPrimary === true);
+            if (primaryEntry) {
+                // Strip any incoming entries that claim to be primary
+                finalEducation = finalEducation.filter(e => !e.isPrimary);
+                // Re-inject the original primary entry at index 0
+                finalEducation.unshift(primaryEntry.toObject ? primaryEntry.toObject() : primaryEntry);
+            }
+        }
+
         const updated = await StudentProfile.findOneAndUpdate(
             { userRef: req.user._id },
-            { $set: { education, techStack, experience, bio, privacy } },
+            { $set: { education: finalEducation, techStack, experience, bio, privacy } },
             { new: true, runValidators: true, upsert: true }
         );
 
