@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const securityHeaders = require('./middleware/securityHeaders');
-const { globalRateLimiter } = require('./middleware/globalRateLimiter');
+
 
 const config = require('./config');
 const errorHandler = require('./middleware/errorHandler');
@@ -33,7 +33,7 @@ app.use(
 // Security middleware (after CORS)
 app.use(securityHeaders());
 app.use(require('./middleware/mongoSanitizer')()); // NoSQL Injection 
-app.use(globalRateLimiter);
+
 
 // Body parsers
 app.use(express.json({ limit: '100kb' }));

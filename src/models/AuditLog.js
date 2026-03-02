@@ -5,7 +5,7 @@ const auditLogSchema = new mongoose.Schema({
     actorEmail: { type: String, required: true, index: true }, // Denormalized for fast queries
     actorRole: { type: String, required: true },
 
-    targetType: { type: String, enum: ['company', 'university', 'system'], required: true },
+    targetType: { type: String, enum: ['company', 'university', 'student', 'system'], required: true },
     targetId: { type: mongoose.Schema.Types.ObjectId, required: true },
 
     actionType: {

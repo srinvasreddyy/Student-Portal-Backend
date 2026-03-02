@@ -3,13 +3,9 @@ const router = express.Router();
 const adminController = require('../controllers/adminController');
 const asyncWrapper = require('../middleware/asyncWrapper');
 const adminGuard = require('../middleware/adminAuth');
-const rateLimit = require('express-rate-limit');
 
-// 300 reqs a day for admin sweeps
-const adminLimiter = rateLimit({ windowMs: 24 * 60 * 60 * 1000, max: 300 });
 
 router.use(adminGuard); // Enforces super_admin rules globally on this route
-router.use(adminLimiter);
 
 router.get('/applications', asyncWrapper(adminController.listApplications));
 router.get('/applications/:id', asyncWrapper(adminController.getApplication));

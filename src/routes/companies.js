@@ -3,16 +3,10 @@ const router = express.Router();
 const companiesController = require('../controllers/companiesController');
 const asyncWrapper = require('../middleware/asyncWrapper');
 const fileUpload = require('../middleware/fileUpload');
-const rateLimit = require('express-rate-limit');
 
-const lookupLimiter = rateLimit({
-    windowMs: 60 * 1000, // 1 minute
-    max: 5,
-    message: 'Too many lookup requests from this IP, please try again after a minute',
-});
 
 // POST /companies/apply
-router.post('/apply', lookupLimiter, asyncWrapper(companiesController.applyCompany));
+router.post('/apply', asyncWrapper(companiesController.applyCompany));
 
 // POST /companies/:id/verify-email
 router.post('/:id/verify-email', asyncWrapper(companiesController.verifyEmail));
