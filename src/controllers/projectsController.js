@@ -78,7 +78,6 @@ exports.listProjects = async (req, res, next) => {
 
 exports.getProject = async (req, res, next) => {
     try {
-        // Strict Populate set to false guarantees that even if Mongoose model mapping glitches, it finds the object
         const project = await Project.findById(req.params.id)
             .populate({ path: 'postedBy', strictPopulate: false }) 
             .populate('acceptedStudents.studentRef');
@@ -131,6 +130,21 @@ exports.acceptStudent = async (req, res, next) => {
 
         if (!studentRef) return res.status(400).json({ success: false, message: 'studentRef required' });
         const result = await projectService.acceptStudent(id, studentRef, authorId);
+        res.status(200).json({ success: true, ...result });
+    } catch (err) {
+        if (err.status) return res.status(err.status).json({ success: false, message: err.message });
+        next(err);
+    }
+};
+
+exports.removeStudent = async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const { studentRef } = req.body;
+        const authorId = req.user.organizationId || req.user._id;
+
+        if (!studentRef) return res.status(400).json({ success: false, message: 'studentRef required' });
+        const result = await projectService.removeStudent(id, studentRef, authorId);
         res.status(200).json({ success: true, ...result });
     } catch (err) {
         if (err.status) return res.status(err.status).json({ success: false, message: err.message });
@@ -217,4 +231,15 @@ exports.getMyProjects = async (req, res, next) => {
         const projects = await Project.find(query).sort({ createdAt: -1 });
         res.status(200).json({ success: true, count: projects.length, data: projects });
     } catch (err) { next(err); }
+};
+
+exports.updateProjectMedia = async (req, res, next) => {
+    try {
+        const authorId = req.user.organizationId || req.user._id;
+        const project = await projectService.updateProjectMedia(req.params.id, authorId, req.body);
+        res.status(200).json({ success: true, data: project });
+    } catch (err) {
+        if (err.status) return res.status(err.status).json({ success: false, message: err.message });
+        next(err);
+    }
 };

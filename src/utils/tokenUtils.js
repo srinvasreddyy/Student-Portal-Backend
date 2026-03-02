@@ -9,6 +9,7 @@ const crypto = require('crypto');
 const config = require('../config');
 const { jwt: jwtConfig } = require('../config/security');
 const logger = require('./logger');
+const serverClient = require('../config/streamClient'); // Ensure Stream token is generated on refresh
 
 class TokenUtils {
     /**
@@ -55,8 +56,7 @@ class TokenUtils {
 
     /**
      * Verify an opaque Refresh Token, rotate it, and detect reuse!
-     * 
-     * @param {string} userId
+     * * @param {string} userId
      * @param {string} incomingPlainTextToken 
      */
     static async rotateRefreshToken(incomingPlainTextToken, reqIp) {
@@ -78,11 +78,6 @@ class TokenUtils {
 
         if (tokenIndex === -1) {
             // Security Alert: Refresh Token Reuse Detection
-            // If the token is not found, but it was presented by the client, it could mean:
-            // 1. Legitimate concurrent race condition (rare with strict frontends)
-            // 2. Token theft. An attacker reused a token the legitimate user already rotated.
-
-            // ACTION: Revoke all sessions for this user.
             logger.warn(`REFRESH TOKEN REUSE DETECTED! Revoking all sessions for user.`, { userId, ip: reqIp });
             user.refreshTokens = [];
             await user.save();
@@ -115,10 +110,15 @@ class TokenUtils {
 
         await user.save();
 
-        // Also optionally mint a new Access Token here returning both
         const newAccessToken = this.generateAccessToken(user);
+        
+        // Also refresh Stream token in case it expires
+        let streamToken = null;
+        try {
+             streamToken = serverClient.createToken(user._id.toString());
+        } catch(e) { console.error("Could not refresh stream token") }
 
-        return { accessToken: newAccessToken, refreshToken: newPlainTextToken };
+        return { accessToken: newAccessToken, refreshToken: newPlainTextToken, streamToken };
     }
 
     /**

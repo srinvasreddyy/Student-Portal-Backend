@@ -85,7 +85,7 @@ exports.login = async (req, res, next) => {
         }
 
         // ==========================================
-        // NEW LOGIC: Block unapproved Admins directly at Login
+        // Block unapproved Admins directly at Login
         // ==========================================
         if (['company_admin', 'university_admin'].includes(user.role)) {
             if (user.status === 'pending' || user.status === 'on_hold') {
@@ -105,11 +105,13 @@ exports.login = async (req, res, next) => {
         const accessToken = TokenUtils.generateAccessToken(user);
         const refreshToken = await TokenUtils.generateRefreshToken(user);
 
+        // STREAM CHAT INTEGRATION ON LOGIN
         let streamToken = null;
         try {
+            // Upsert user to ensure they exist in Stream before we give them a token
             await serverClient.upsertUser({
                 id: user._id.toString(),
-                name: user.email,
+                name: user.profile?.repName || user.email, // Try to use a nice name
                 role: user.role === 'student' ? 'user' : 'admin'
             });
             streamToken = serverClient.createToken(user._id.toString());

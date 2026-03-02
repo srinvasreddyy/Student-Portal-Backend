@@ -20,7 +20,12 @@ router.post('/:id/withdraw', authenticate, authorize('student'), asyncWrapper(pr
 
 // Owner (Company/University) endpoints
 router.post('/', authenticate, authorize('company_admin', 'university_admin'), validateProjectPayload, asyncWrapper(projectsController.createProject));
+
+// NEW: Endpoint to update media without triggering strict text payload validation
+router.patch('/:id/media', authenticate, authorize('company_admin', 'university_admin'), asyncWrapper(projectsController.updateProjectMedia));
+
 router.post('/:id/accept', authenticate, authorize('company_admin', 'university_admin'), asyncWrapper(projectsController.acceptStudent));
+router.post('/:id/remove', authenticate, authorize('company_admin', 'university_admin'), asyncWrapper(projectsController.removeStudent));
 router.post('/:id/reject', authenticate, authorize('company_admin', 'university_admin'), asyncWrapper(projectsController.rejectApplicant));
 router.post('/:id/complete', authenticate, authorize('company_admin', 'university_admin'), asyncWrapper(projectsController.completeProject));
 router.delete('/:id', authenticate, authorize('company_admin', 'university_admin'), asyncWrapper(projectsController.cancelProject));

@@ -1,10 +1,3 @@
-/**
- * Docs read & endpoints cited:
- * - Mongoose Transactions: https://mongoosejs.com/docs/transactions.html
- * - MongoDB Transactions: https://www.mongodb.com/docs/manual/core/transactions/
- * - MongoDB Core API (Session): https://www.mongodb.com/docs/manual/reference/method/Session.startTransaction/
- */
-
 const mongoose = require('mongoose');
 const Project = require('../models/Project');
 const User = require('../models/User');
@@ -21,7 +14,12 @@ exports.createProject = async (authorId, authorType, payload) => {
         description: payload.description,
         roles: payload.roles,
         techStack: payload.techStack || [],
-        videoUrl: payload.videoUrl,
+        
+        // BUG FIXED: Map the media resources correctly
+        video: payload.video,
+        projectDocuments: payload.projectDocuments || [],
+        videoUrl: payload.videoUrl, // Legacy fallback
+        
         maxStudentsRequired: payload.maxStudentsRequired || payload.maxStudents || 1,
         durationInWeeks: payload.durationInWeeks || payload.durationWeeks || 1,
         status: 'open'
@@ -53,12 +51,31 @@ exports.createProject = async (authorId, authorType, payload) => {
         const channel = serverClient.channel('messaging', channelId, {
             name: payload.title,
             created_by_id: authorId.toString(),
-            members: members // Contains strictly Admin and Super Admin
+            members: members 
         });
         await channel.create();
         project.streamChannelId = channelId;
     } catch (err) {
         console.error('Stream channel creation failed:', err.message);
+    }
+
+    await project.save();
+    return project;
+};
+
+// NEW METHOD: Update only Media/Documents for an existing project
+exports.updateProjectMedia = async (projectId, authorId, payload) => {
+    const project = await Project.findOne({ _id: projectId, postedBy: authorId });
+    if (!project) {
+        const err = new Error('project_not_found_or_forbidden'); err.status = 404; throw err;
+    }
+
+    if (payload.video !== undefined) {
+        project.video = payload.video; // Update or clear video
+    }
+    
+    if (payload.projectDocuments !== undefined) {
+        project.projectDocuments = payload.projectDocuments; // Replace document array
     }
 
     await project.save();
@@ -145,7 +162,7 @@ exports.acceptStudent = async (projectId, studentId, authorId) => {
         try {
             if (project.streamChannelId) {
                 const studentUser = await User.findById(studentId);
-                await serverClient.upsertUsers([{ id: studentId.toString(), role: 'user', name: studentUser?.email || 'Student' }]);
+                await serverClient.upsertUsers([{ id: studentId.toString(), role: 'user', name: studentUser?.name || studentUser?.email || 'Student' }]);
                 const channel = serverClient.channel('messaging', project.streamChannelId);
                 await channel.addMembers([studentId.toString()]);
             }
@@ -154,6 +171,40 @@ exports.acceptStudent = async (projectId, studentId, authorId) => {
         }
 
         return { accepted: true, projectId: project._id, status: project.status };
+    });
+};
+
+exports.removeStudent = async (projectId, studentId, authorId) => {
+    const conn = mongoose.connection;
+    return await withTransaction(conn, async (session) => {
+        const project = await Project.findOne({ _id: projectId, postedBy: authorId }).session(session).exec();
+
+        if (!project) throw Object.assign(new Error('project_not_found_or_forbidden'), { status: 404 });
+        if (project.status !== 'in_progress' && project.status !== 'open') throw Object.assign(new Error('project_invalid_status'), { status: 400 });
+
+        // Remove from acceptedStudents
+        project.acceptedStudents = project.acceptedStudents.filter(a => a.studentRef.toString() !== studentId.toString());
+
+        // Reopen project if it dropped below max required
+        if (project.acceptedStudents.length < project.maxStudentsRequired && project.status === 'in_progress') {
+            project.status = 'open';
+        }
+
+        await project.save({ session });
+
+        await User.findByIdAndUpdate(studentId, { $unset: { activeProjectRef: 1 } }, { session });
+        await StudentProfile.findOneAndUpdate({ userRef: studentId }, { $unset: { activeProjectRef: 1 }, $set: { status: 'active' } }, { session });
+
+        if (project.streamChannelId) {
+            try {
+                const channel = serverClient.channel('messaging', project.streamChannelId);
+                await channel.removeMembers([studentId.toString()]);
+            } catch (err) {
+                console.error('Stream remove member failed:', err.message);
+            }
+        }
+
+        return { removed: true, projectId: project._id, status: project.status };
     });
 };
 
@@ -176,7 +227,7 @@ exports.completeProject = async (projectId, authorId) => {
         const project = await Project.findOne({ _id: projectId, postedBy: authorId }).session(session).exec();
 
         if (!project) throw Object.assign(new Error('project_not_found_or_forbidden'), { status: 404 });
-        if (project.status !== 'in_progress') throw Object.assign(new Error('project_not_in_progress'), { status: 400 });
+        if (project.status !== 'in_progress' && project.status !== 'open') throw Object.assign(new Error('project_cannot_be_completed'), { status: 400 });
 
         project.status = 'completed';
         await project.save({ session });
