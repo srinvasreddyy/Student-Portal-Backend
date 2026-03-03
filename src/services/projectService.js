@@ -14,12 +14,12 @@ exports.createProject = async (authorId, authorType, payload) => {
         description: payload.description,
         roles: payload.roles,
         techStack: payload.techStack || [],
-        
+
         // BUG FIXED: Map the media resources correctly
         video: payload.video,
         projectDocuments: payload.projectDocuments || [],
         videoUrl: payload.videoUrl, // Legacy fallback
-        
+
         maxStudentsRequired: payload.maxStudentsRequired || payload.maxStudents || 1,
         durationInWeeks: payload.durationInWeeks || payload.durationWeeks || 1,
         status: 'open'
@@ -30,7 +30,7 @@ exports.createProject = async (authorId, authorType, payload) => {
     try {
         const superAdmin = await User.findOne({ role: 'super_admin' });
         const authorUser = await User.findById(authorId) || await mongoose.model(project.postedByModel).findById(authorId);
-        
+
         const usersToUpsert = [];
         // Upsert Author
         if (authorUser) {
@@ -51,7 +51,7 @@ exports.createProject = async (authorId, authorType, payload) => {
         const channel = serverClient.channel('messaging', channelId, {
             name: payload.title,
             created_by_id: authorId.toString(),
-            members: members 
+            members: members
         });
         await channel.create();
         project.streamChannelId = channelId;
@@ -73,7 +73,7 @@ exports.updateProjectMedia = async (projectId, authorId, payload) => {
     if (payload.video !== undefined) {
         project.video = payload.video; // Update or clear video
     }
-    
+
     if (payload.projectDocuments !== undefined) {
         project.projectDocuments = payload.projectDocuments; // Replace document array
     }
@@ -221,13 +221,17 @@ exports.rejectApplicant = async (projectId, studentId, authorId) => {
     return true;
 };
 
-exports.completeProject = async (projectId, authorId) => {
+exports.completeProject = async (projectId, authorId, { sourceCodeUrl, productionUrl } = {}) => {
     const conn = mongoose.connection;
     return await withTransaction(conn, async (session) => {
         const project = await Project.findOne({ _id: projectId, postedBy: authorId }).session(session).exec();
 
         if (!project) throw Object.assign(new Error('project_not_found_or_forbidden'), { status: 404 });
         if (project.status !== 'in_progress' && project.status !== 'open') throw Object.assign(new Error('project_cannot_be_completed'), { status: 400 });
+
+        // Save project output links
+        if (sourceCodeUrl) project.sourceCodeUrl = sourceCodeUrl;
+        if (productionUrl) project.productionUrl = productionUrl;
 
         project.status = 'completed';
         await project.save({ session });
@@ -241,7 +245,10 @@ exports.completeProject = async (projectId, authorId) => {
             description: project.description,
             tags: project.roles,
             url: `/projects/${project._id}`,
-            visibility: 'public'
+            visibility: 'public',
+            coverImage: 'https://images.unsplash.com/photo-1498050108023-c5249f4df085?q=80&w=600&auto=format&fit=crop',
+            source: 'app',
+            projectRef: project._id
         }));
 
         if (portfolioDocs.length > 0) {

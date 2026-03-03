@@ -61,6 +61,32 @@ const createNotification = async (req, res, next) => {
     }
 };
 
+const broadcastNotification = async (req, res, next) => {
+    try {
+        if (req.user.role !== 'super_admin') return res.status(403).json({ success: false, message: 'Forbidden' });
+
+        const { targetRoles, type, title, body } = req.body;
+
+        if (!Array.isArray(targetRoles) || targetRoles.length === 0) {
+            return res.status(400).json({ success: false, message: 'targetRoles must be a non-empty array' });
+        }
+        if (!title || !body) {
+            return res.status(400).json({ success: false, message: 'title and body are required' });
+        }
+
+        const result = await notificationService.broadcastNotification({
+            targetRoles,
+            type: type || 'admin_broadcast',
+            title,
+            body,
+        });
+
+        res.status(201).json({ success: true, count: result.count });
+    } catch (err) {
+        next(err);
+    }
+};
+
 /** ADMIN EMAIL VIEWERS */
 
 const getEmailSends = async (req, res, next) => {
@@ -113,6 +139,7 @@ module.exports = {
     getNotifications,
     markAsRead,
     createNotification,
+    broadcastNotification,
     getEmailSends,
     resendEmail
 };

@@ -1,4 +1,3 @@
-const mongoose = require('mongoose');
 const StudentProfile = require('../models/StudentProfile');
 const PortfolioItem = require('../models/PortfolioItem');
 const { validateLink } = require('../utils/linkValidator');
@@ -61,7 +60,7 @@ exports.listPortfolio = async (req, res, next) => {
 exports.addPortfolioItem = async (req, res, next) => {
     try {
         // Form boundary or JSON handling via busboy middleware (req.body contains fields, req.streamedFile has the file)
-        const { title, description, tags, visibility, url } = req.body;
+        const { title, description, tags, visibility, url, coverImage } = req.body;
 
         if (!title) return res.status(400).json({ success: false, message: 'Title required' });
 
@@ -79,7 +78,9 @@ exports.addPortfolioItem = async (req, res, next) => {
                 description,
                 tags: safeTags,
                 url: normalizedUrl,
-                visibility: visibility || 'public'
+                visibility: visibility || 'public',
+                coverImage,
+                source: 'user'
             });
             return res.status(201).json({ success: true, data: item });
         }
@@ -138,7 +139,9 @@ exports.addPortfolioItem = async (req, res, next) => {
                 mimeType: actualMime,
                 originalName: filename,
                 storage: 'gridfs',
-                visibility: visibility || 'public'
+                visibility: visibility || 'public',
+                coverImage,
+                source: 'user'
             });
 
             return res.status(201).json({ success: true, data: item });
@@ -203,5 +206,42 @@ exports.getPublicProfile = async (req, res, next) => {
         const portfolio = await PortfolioItem.find(filter).sort({ createdAt: -1 });
 
         res.status(200).json({ success: true, data: { profile, portfolio } });
+    } catch (err) { next(err); }
+};
+
+exports.getStudentPortfolio = async (req, res, next) => {
+    try {
+        const studentId = req.params.userId;
+
+        const items = await PortfolioItem.find({ ownerRef: studentId, visibility: 'public' })
+            .populate('projectRef', 'title description techStack roles durationInWeeks postedByModel sourceCodeUrl productionUrl status')
+            .sort({ createdAt: -1 })
+            .lean();
+
+        res.status(200).json({ success: true, count: items.length, data: items });
+    } catch (err) { next(err); }
+};
+
+exports.uploadPortfolioImage = async (req, res, next) => {
+    try {
+        if (!req.streamedFile) return res.status(400).json({ success: false, message: 'No file uploaded' });
+
+        const { fileId, filename, url } = await storageService.uploadFileStream({
+            fileStream: req.streamedFile.stream,
+            filename: req.streamedFile.filename,
+            metadata: {
+                uploader: req.user._id,
+                type: 'portfolio_cover',
+                mimeType: req.streamedFile.mimeType
+            }
+        });
+
+        res.status(200).json({ success: true, fileId, url });
+    } catch (err) { next(err); }
+};
+
+exports.getPortfolioImage = async (req, res, next) => {
+    try {
+        await storageService.downloadFileStream(req.params.fileId, res, req.headers);
     } catch (err) { next(err); }
 };

@@ -3,6 +3,7 @@ const Company = require('../models/Company');
 const University = require('../models/University');
 const User = require('../models/User');
 const StudentProfile = require('../models/StudentProfile');
+const PortfolioItem = require('../models/PortfolioItem');
 const AuditLog = require('../models/AuditLog');
 const { sendWithRetry, templates } = require('../services/mailer');
 
@@ -405,5 +406,194 @@ exports.updateStudentStatus = async (req, res, next) => {
         });
 
         res.status(200).json({ success: true, message: `Student account ${status}`, data: { id: user._id, status: user.status, domainVerified: user.domainVerified } });
+    } catch (err) { next(err); }
+};
+
+// ── Portfolio Search (Talent Discovery) ──
+exports.searchPortfolios = async (req, res, next) => {
+    try {
+        const { q, source, skills, institution, hasExperience, page = 1, limit = 12 } = req.query;
+
+        const query = { visibility: 'public' };
+
+        // 1. Portfolio Item textual search
+        if (q && q.trim().length >= 2) {
+            const regex = new RegExp(q.trim(), 'i');
+            query.$or = [
+                { title: regex },
+                { description: regex },
+                { tags: regex }
+            ];
+        }
+
+        // 2. Exact match filter on PortfolioItem
+        if (source && (source === 'app' || source === 'user')) {
+            query.source = source;
+        }
+
+        // 3. Profile-based filters (need to find matching users first)
+        const profileFilters = {};
+        if (skills && skills.trim()) {
+            // Assumes comma-separated skills in query: ?skills=react,node
+            const skillsArray = skills.split(',').map(s => new RegExp(`^${s.trim()}$`, 'i'));
+            profileFilters.techStack = { $all: skillsArray };
+        }
+        if (institution && institution.trim()) {
+            profileFilters['education.institution'] = new RegExp(institution.trim(), 'i');
+        }
+        if (hasExperience === 'true') {
+            profileFilters['experience.0'] = { $exists: true }; // Must have at least one experience entry
+        }
+
+        // If any profile filters apply, resolve the matching user IDs
+        if (Object.keys(profileFilters).length > 0) {
+            const matchingProfiles = await StudentProfile.find(profileFilters).select('userRef').lean();
+            const allowedUserIds = matchingProfiles.map(p => p.userRef);
+
+            // If we already have a filter on ownerRef (highly unlikely in current design), merge it. Otherwise set it.
+            if (query.ownerRef && query.ownerRef.$in) {
+                // Intersect the arrays (edge case safety)
+                const existingStrs = query.ownerRef.$in.map(id => id.toString());
+                query.ownerRef.$in = allowedUserIds.filter(id => existingStrs.includes(id.toString()));
+            } else {
+                query.ownerRef = { $in: allowedUserIds };
+            }
+
+            // If profile filters returned 0 matches, the portfolio query should safely return 0 matches.
+            if (allowedUserIds.length === 0) {
+                return res.status(200).json({ success: true, total: 0, count: 0, data: [] });
+            }
+        }
+
+        const skip = (page - 1) * limit;
+
+        const items = await PortfolioItem.find(query)
+            .populate('ownerRef', 'firstName lastName email institutionName course fieldOfStudy')
+            .populate('projectRef', 'title description techStack roles durationInWeeks postedByModel sourceCodeUrl productionUrl status')
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(parseInt(limit))
+            .lean();
+
+        const total = await PortfolioItem.countDocuments(query);
+
+        res.status(200).json({ success: true, total, count: items.length, data: items });
+    } catch (err) { next(err); }
+};
+
+// ── Student Search (Talent Discovery - Students Tab) ──
+exports.searchStudents = async (req, res, next) => {
+    try {
+        const { q, passoutYear, degreeCategory, hasExperience, skills, page = 1, limit = 12 } = req.query;
+
+        const profileQuery = { 'privacy.publicProfile': true };
+
+        // Profile-based Filters
+        if (passoutYear && !isNaN(passoutYear)) {
+            profileQuery['education.endYear'] = parseInt(passoutYear);
+        }
+
+        if (degreeCategory && degreeCategory.trim()) {
+            profileQuery['education.degree'] = new RegExp(degreeCategory.trim(), 'i');
+        }
+
+        if (hasExperience === 'true') {
+            profileQuery['experience.0'] = { $exists: true };
+        }
+
+        if (skills && skills.trim()) {
+            const skillsArray = skills.split(',').map(s => new RegExp(`^${s.trim()}$`, 'i'));
+            profileQuery.techStack = { $all: skillsArray };
+        }
+
+        // If there's a text query 'q', we need to match it against User info (name, email)
+        // OR against Profile info (bio, techStack). 
+        // Best approach: If 'q' exists, find matching User IDs first, 
+        // then combine with the profileQuery.
+        if (q && q.trim().length >= 2) {
+            const regex = new RegExp(q.trim(), 'i');
+
+            // 1. Find matched users
+            const matchedUsers = await User.find({
+                role: 'student',
+                status: 'active',
+                $or: [
+                    { firstName: regex },
+                    { lastName: regex },
+                    { email: regex },
+                    { institutionName: regex }
+                ]
+            }).select('_id').lean();
+
+            const matchedUserIds = matchedUsers.map(u => u._id);
+
+            // 2. We also allow matching profile text directly
+            profileQuery.$or = [
+                { userRef: { $in: matchedUserIds } },
+                { bio: regex },
+                { techStack: regex }
+            ];
+        } else {
+            // Guarantee we only list active students if no 'q' search is done
+            const activeUsers = await User.find({ role: 'student', status: 'active' }).select('_id').lean();
+            profileQuery.userRef = { $in: activeUsers.map(u => u._id) };
+        }
+
+        const skip = (page - 1) * limit;
+
+        const profiles = await StudentProfile.find(profileQuery)
+            .populate('userRef', 'firstName lastName email institutionName course fieldOfStudy status domainVerified')
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(parseInt(limit))
+            .lean();
+
+        const total = await StudentProfile.countDocuments(profileQuery);
+
+        res.status(200).json({ success: true, total, count: profiles.length, data: profiles });
+    } catch (err) { next(err); }
+};
+
+// ── Send Recruitment Email ──
+exports.sendRecruitmentEmail = async (req, res, next) => {
+    try {
+        const { studentId, subject, body } = req.body;
+        if (!studentId || !subject || !body) {
+            return res.status(400).json({ success: false, message: 'studentId, subject, and body are required' });
+        }
+
+        const student = await User.findById(studentId).select('email firstName lastName');
+        if (!student) return res.status(404).json({ success: false, message: 'Student not found' });
+
+        const { sendEmail } = require('../services/mailer');
+
+        const htmlContent = `
+            <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto;">
+                <div style="background: linear-gradient(135deg, #0ea5e9 0%, #8b5cf6 100%); padding: 2rem; border-radius: 12px 12px 0 0;">
+                    <h1 style="color: #fff; margin: 0; font-size: 1.5rem;">Recruitment Opportunity</h1>
+                    <p style="color: rgba(255,255,255,0.85); margin: 0.5rem 0 0; font-size: 0.9rem;">From the Global Academy Platform</p>
+                </div>
+                <div style="background: #ffffff; padding: 2rem; border: 1px solid #e2e8f0; border-top: none;">
+                    <p style="color: #334155; margin: 0 0 0.5rem;">Hi ${student.firstName || 'Student'},</p>
+                    <div style="color: #475569; line-height: 1.7; white-space: pre-wrap;">${body}</div>
+                </div>
+                <div style="background: #f8fafc; padding: 1.5rem 2rem; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 12px 12px; text-align: center;">
+                    <p style="color: #94a3b8; font-size: 0.8rem; margin: 0;">Sent via Global Academy Platform</p>
+                </div>
+            </div>
+        `;
+
+        await sendEmail(student.email, subject, htmlContent);
+
+        // Audit log
+        await AuditLog.create({
+            actorEmail: req.user.email, actorRef: req.user._id, actorRole: req.user.role,
+            targetType: 'student', targetId: studentId,
+            actionType: 'recruitment_email',
+            details: { subject, recipientEmail: student.email },
+            ip: req.ip, userAgent: req.get('User-Agent')
+        });
+
+        res.status(200).json({ success: true, message: 'Recruitment email sent successfully' });
     } catch (err) { next(err); }
 };

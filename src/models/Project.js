@@ -13,7 +13,7 @@ const acceptedStudentSchema = new mongoose.Schema({
 const documentSchema = new mongoose.Schema({
     tag: { type: String, required: true },
     url: { type: String }, // For external links
-    fileId: { type: mongoose.Schema.Types.ObjectId, ref: 'fs.files' }, // For uploaded GridFS files
+    fileId: { type: String }, // Cloudinary public_id OR GridFS files
     fileName: { type: String }
 }, { _id: true });
 
@@ -31,9 +31,9 @@ const projectSchema = new mongoose.Schema({
     description: { type: String, required: true },
     roles: [{ type: String, required: true }],
     techStack: [{ type: String }],
-    
+
     // Updated Media & Documents
-    video: videoSchema, 
+    video: videoSchema,
     projectDocuments: [documentSchema],
 
     // Legacy fallback
@@ -49,7 +49,10 @@ const projectSchema = new mongoose.Schema({
     },
 
     appliedStudents: [applicantSchema],
-    acceptedStudents: [acceptedStudentSchema]
+    acceptedStudents: [acceptedStudentSchema],
+
+    sourceCodeUrl: { type: String }, // Provided by admin when marking project complete
+    productionUrl: { type: String }  // Optional production/deployment link
 }, { timestamps: true });
 
 // Indexes for query performance

@@ -1,22 +1,24 @@
 /**
  * Docs consulted:
+ * - Cloudinary Node SDK: https://cloudinary.com/documentation/node_integration
  * - GridFS API: https://www.mongodb.com/docs/manual/core/gridfs/
- * - MongoDB Node Driver (GridFSBucket): https://mongodb.github.io/node-mongodb-native/4.4/classes/GridFSBucket.html
- * - file-type package (ESM wrapper): https://www.npmjs.com/package/file-type
- * 
- * Rationale: Instead of using `multer-gridfs-storage`, using native `GridFSBucket` streams
- * allows us programmatic capability to sniff the buffer's initial bytes dynamically. This natively mitigates 
- * MIME sniffing vulnerabilities prior to committing files to disk directly. Memory usage is held to `chunkSizeBytes`.
  */
 
 const mongoose = require('mongoose');
-const { stream } = require('stream');
+const cloudinary = require('cloudinary').v2;
+
+// Configure Cloudinary
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET
+});
 
 let bucket;
 
 function getBucket() {
     if (!bucket) {
-        // Init GridFSBucket lazily
+        // Init GridFSBucket lazily for backward compatibility
         bucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, {
             bucketName: process.env.GRIDFS_BUCKET_NAME || 'portfolios'
         });
@@ -37,32 +39,35 @@ async function getFileTypeData(bufferBlock) {
 }
 
 /**
- * Uploads a file stream directly to GridFS with chunking.
+ * Uploads a file stream directly to Cloudinary
  */
 exports.uploadFileStream = ({ fileStream, filename, metadata }) => {
     return new Promise((resolve, reject) => {
-        const gfsBucket = getBucket();
-        // 255KB is default chunk size which optimally avoids fragmentation in mongodb
-        const uploadStream = gfsBucket.openUploadStream(filename, {
-            metadata
-        });
-
-        fileStream.pipe(uploadStream)
-            .on('error', (err) => reject(err))
-            .on('finish', () => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+            {
+                resource_type: 'auto',
+                folder: 'gap_portfolios' // Organize files in Cloudinary
+            },
+            (error, result) => {
+                if (error) return reject(error);
                 resolve({
-                    fileId: uploadStream.id,
+                    fileId: result.public_id,
+                    url: result.secure_url,
                     filename,
                     metadata
                 });
-            });
+            }
+        );
+
+        fileStream.pipe(uploadStream).on('error', (err) => reject(err));
     });
 };
 
 /**
- * Resolves Metadata directly bypassing the chunks for snappy listing
+ * Resolves Metadata directly bypassing the chunks for snappy listing (GridFS only)
  */
 exports.getFileMetadata = async (fileId) => {
+    if (!mongoose.Types.ObjectId.isValid(fileId)) return null;
     const gfsBucket = getBucket();
     const files = await gfsBucket.find({ _id: new mongoose.Types.ObjectId(fileId) }).toArray();
     if (!files || files.length === 0) return null;
@@ -70,23 +75,41 @@ exports.getFileMetadata = async (fileId) => {
 };
 
 /**
- * Deletes the file entirely from GridFS
+ * Deletes the file (handles both Cloudinary and GridFS)
  */
 exports.deleteFile = async (fileId) => {
-    const gfsBucket = getBucket();
-    try {
-        await gfsBucket.delete(new mongoose.Types.ObjectId(fileId));
-        return true;
-    } catch (e) {
-        // 404 - already deleted or doesn't exist
-        return false;
+    // If it's a legacy GridFS Hex ID
+    if (mongoose.Types.ObjectId.isValid(fileId)) {
+        const gfsBucket = getBucket();
+        try {
+            await gfsBucket.delete(new mongoose.Types.ObjectId(fileId));
+            return true;
+        } catch (e) {
+            return false;
+        }
+    } else {
+        // Cloudinary Public ID
+        try {
+            await cloudinary.uploader.destroy(fileId);
+            return true;
+        } catch (e) {
+            return false;
+        }
     }
 };
 
 /**
- * Streams the file sequentially handling Partial ranges (used for fast video skipping)
+ * Download / Stream Handler (Handles both legacy GridFS and dynamic Cloudinary routing)
  */
 exports.downloadFileStream = async (fileId, res, reqHeaders) => {
+    // 1. Cloudinary File
+    if (!mongoose.Types.ObjectId.isValid(fileId)) {
+        // Fast redirect to the secure CDN url
+        const url = cloudinary.url(fileId, { secure: true });
+        return res.redirect(url);
+    }
+
+    // 2. Legacy GridFS File streaming
     const file = await exports.getFileMetadata(fileId);
     if (!file) {
         return res.status(404).json({ success: false, message: 'File not found' });

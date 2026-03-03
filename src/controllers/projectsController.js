@@ -20,7 +20,7 @@ exports.uploadDocument = async (req, res, next) => {
     try {
         if (!req.streamedFile) return res.status(400).json({ success: false, message: 'No file uploaded' });
 
-        const { fileId, filename } = await storageService.uploadFileStream({
+        const { fileId, filename, url } = await storageService.uploadFileStream({
             fileStream: req.streamedFile.stream,
             filename: req.streamedFile.filename,
             metadata: {
@@ -30,7 +30,7 @@ exports.uploadDocument = async (req, res, next) => {
             }
         });
 
-        res.status(200).json({ success: true, fileId, filename });
+        res.status(200).json({ success: true, fileId, filename, url });
     } catch (err) { next(err); }
 };
 
@@ -177,7 +177,8 @@ exports.rejectApplicant = async (req, res, next) => {
 exports.completeProject = async (req, res, next) => {
     try {
         const authorId = req.user.organizationId || req.user._id;
-        const result = await projectService.completeProject(req.params.id, authorId);
+        const { sourceCodeUrl, productionUrl } = req.body;
+        const result = await projectService.completeProject(req.params.id, authorId, { sourceCodeUrl, productionUrl });
         res.status(200).json({ success: true, ...result });
     } catch (err) {
         if (err.status) return res.status(err.status).json({ success: false, message: err.message });

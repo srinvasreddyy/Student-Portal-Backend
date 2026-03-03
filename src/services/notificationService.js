@@ -85,6 +85,32 @@ class NotificationService {
     }
 
     /**
+     * Broadcast a notification to all active users matching the given roles.
+     * Creates one Notification document per matching user via bulk insert.
+     */
+    async broadcastNotification({ targetRoles, type, title, body, meta }) {
+        const validRoles = ['student', 'company_admin', 'university_admin', 'super_admin'];
+        const roles = targetRoles.filter(r => validRoles.includes(r));
+        if (roles.length === 0) throw new Error('No valid target roles provided');
+
+        const users = await User.find({ role: { $in: roles }, status: 'active' }).select('_id').lean();
+        if (users.length === 0) return { count: 0 };
+
+        const docs = users.map(u => ({
+            userRef: u._id,
+            type: type || 'admin_broadcast',
+            title,
+            body,
+            meta,
+            read: false,
+            deliveredEmail: false,
+        }));
+
+        await Notification.insertMany(docs);
+        return { count: docs.length };
+    }
+
+    /**
      * Helper to enqueue offline chat digests bridging from Phase 7.
      * In reality, this should queue ONE job per project to aggregate messages to prevent spam.
      */

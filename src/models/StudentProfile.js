@@ -17,6 +17,7 @@ const studentProfileSchema = new mongoose.Schema({
         company: { type: String, required: true },
         from: Date,
         to: Date,
+        isCurrent: { type: Boolean, default: false },
         description: String
     }],
     bio: { type: String, maxlength: 2000 },

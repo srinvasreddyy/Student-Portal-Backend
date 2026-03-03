@@ -13,6 +13,9 @@ router.post('/notifications/mark-read', authenticate, notifController.markAsRead
 // Internal/Admin API endpoints for testing or broadcasting (uses super_admin role checking in controller)
 router.post('/notifications', authenticate, notifController.createNotification);
 
+// Broadcast notification to users by role (super_admin only)
+router.post('/notifications/broadcast', authenticate, authorize('super_admin'), notifController.broadcastNotification);
+
 // Super-admin only monitoring views
 router.get('/admin/email-sends', authenticate, authorize('super_admin'), notifController.getEmailSends);
 router.post('/admin/email-sends/:id/resend', authenticate, authorize('super_admin'), notifController.resendEmail);

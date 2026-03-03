@@ -8,14 +8,18 @@ const portfolioItemSchema = new mongoose.Schema({
     tags: [{ type: String }],
 
     url: { type: String }, // For link-only Items and Completed Projects
+    coverImage: { type: String }, // External URL or relative path to our GridFS file service
 
-    fileId: { type: mongoose.Schema.Types.ObjectId }, // GridFS file ID
+    fileId: { type: String }, // Cloudinary public_id OR GridFS file ID
     mimeType: { type: String },
     size: { type: Number },
     originalName: { type: String },
     storage: { type: String, enum: ['gridfs', 'external'], default: 'gridfs' }, // ready for S3 migration
 
-    visibility: { type: String, enum: ['private', 'public', 'unlisted'], default: 'public' }
+    visibility: { type: String, enum: ['private', 'public', 'unlisted'], default: 'public' },
+
+    source: { type: String, enum: ['app', 'user'], default: 'user' }, // 'app' = completed via platform project, 'user' = manually added
+    projectRef: { type: mongoose.Schema.Types.ObjectId, ref: 'Project' } // Links back to the originating project (app-completed only)
 }, { timestamps: true });
 
 portfolioItemSchema.index({ ownerRef: 1, createdAt: -1 });
