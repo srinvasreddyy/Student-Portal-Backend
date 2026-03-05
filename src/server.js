@@ -32,6 +32,9 @@ async function startServer() {
                 `Server running in ${config.app.env} mode on port ${config.app.port}`
             );
         });
+
+        const emailJobProcessor = require('./jobs/emailJobProcessor');
+        emailJobProcessor.start();
     } catch (error) {
         logger.error(`Failed to start server: ${error.message}`);
         process.exit(1);
@@ -64,4 +67,4 @@ process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 startServer();
- 
+
