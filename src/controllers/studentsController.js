@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const StudentProfile = require('../models/StudentProfile');
 const PortfolioItem = require('../models/PortfolioItem');
 const { validateLink } = require('../utils/linkValidator');

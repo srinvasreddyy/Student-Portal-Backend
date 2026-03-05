@@ -218,6 +218,7 @@ class MailerService {
 
 const mailerInstance = new MailerService();
 // Bind the method so that destructuring works correctly
+mailerInstance.sendEmail = mailerInstance.sendEmail.bind(mailerInstance);
 mailerInstance.sendWithRetry = mailerInstance.sendWithRetry.bind(mailerInstance);
 mailerInstance.sendVerificationEmail = mailerInstance.sendVerificationEmail.bind(mailerInstance);
 
